@@ -21,9 +21,11 @@
 ## Enterprise runtime
 - [ ] Celery/Redis worker with resumable checkpoints
 - [ ] PostgreSQL migrations
-- [ ] authenticated identity and persistent RBAC
-- [ ] document ACL filtering before retrieval
+- [x] authenticated identity and persistent RBAC foundation
+- [x] document ACL filtering before retrieval
+- [x] tenant isolation in authenticated requests
 - [ ] idempotency and dead-letter handling
+- [ ] audit events for security-sensitive actions
 
 ## Intelligence
 - [ ] structured table/layout extraction

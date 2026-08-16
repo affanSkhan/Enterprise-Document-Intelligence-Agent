@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "schema": {
+    "text": "string",
+    "claim_type": "fact|policy|requirement|date|numeric|unknown",
+    "confidence": "number_0_to_1",
+    "source_locator": "optional page/chunk locator"
+  },
+  "quality_rules": [
+    "Every claim must preserve source wording or a faithful normalized representation.",
+    "Never infer a claim solely from entity co-occurrence.",
+    "Confidence must describe extraction confidence, not truth probability.",
+    "A contradiction requires evidence from two claims; uncertainty must remain explicit."
+  ]
+}

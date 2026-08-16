@@ -27,5 +27,5 @@ def extract_claims(text: str) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise ValueError("Model returned invalid claim JSON") from exc
     if not isinstance(parsed, dict) or not isinstance(parsed.get("claims"), list) or not isinstance(parsed.get("entities"), list):
-        raise ValueError("Claim extraction schema validation failed")
+        raise TypeError("Claim extraction schema validation failed")
     return parsed

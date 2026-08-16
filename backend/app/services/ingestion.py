@@ -13,7 +13,6 @@ from app.parsers.factory import get_parser
 from app.vectorstore.client import get_chroma_client, get_vectorstore
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".xlsx"}
-CHECKPOINTS = ("uploaded", "parsed", "chunked", "indexed")
 
 
 def sha256_file(path: Path) -> str:
@@ -26,6 +25,14 @@ def sha256_file(path: Path) -> str:
 
 def _sidecar(doc_id: str, suffix: str) -> Path:
     return Path(settings.UPLOAD_DIR) / f"{doc_id}.{suffix}"
+
+
+def _existing_job(db: Session, tenant_id: str, checksum: str) -> Job | None:
+    return db.query(Job).filter(
+        Job.tenant_id == tenant_id,
+        Job.type == "document_ingestion",
+        Job.idempotency_key == checksum,
+    ).first()
 
 
 def stage_upload(file: UploadFile, db: Session, tenant_id: str) -> tuple[Document, Job, bool]:
@@ -48,23 +55,32 @@ def stage_upload(file: UploadFile, db: Session, tenant_id: str) -> tuple[Documen
     checksum = sha256_file(path)
     existing = db.query(Document).filter(Document.tenant_id == tenant_id, Document.checksum == checksum).first()
     if existing:
-        existing_job = db.query(Job).filter(
-            Job.tenant_id == tenant_id,
-            Job.type == "document_ingestion",
-            Job.idempotency_key == checksum,
-        ).first()
         path.unlink(missing_ok=True)
+        existing_job = _existing_job(db, tenant_id, checksum)
         if existing_job:
             return existing, existing_job, True
+        checkpoint = "indexed" if existing.status == "INDEXED" else "uploaded"
+        status = "succeeded" if checkpoint == "indexed" else "queued"
+        job = Job(
+            tenant_id=tenant_id,
+            type="document_ingestion",
+            status=status,
+            idempotency_key=checksum,
+            checkpoint=checkpoint,
+            payload=json.dumps({"document_id": existing.id}),
+            max_attempts=5,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return existing, job, True
 
-    doc_id = temp_id
-    final_path = path
     document = Document(
-        id=doc_id,
+        id=temp_id,
         tenant_id=tenant_id,
         filename=filename,
         file_type=file.content_type or ext,
-        file_path=str(final_path),
+        file_path=str(path),
         checksum=checksum,
         status="QUEUED",
     )
@@ -76,7 +92,7 @@ def stage_upload(file: UploadFile, db: Session, tenant_id: str) -> tuple[Documen
         status="queued",
         idempotency_key=checksum,
         checkpoint="uploaded",
-        payload=json.dumps({"document_id": doc_id}),
+        payload=json.dumps({"document_id": document.id}),
         max_attempts=5,
     )
     db.add(job)
@@ -145,6 +161,7 @@ def process_document_job(job_id: str) -> None:
     from app.db.session import SessionLocal
 
     db = SessionLocal()
+    job = None
     try:
         job = db.get(Job, job_id)
         if not job:
@@ -184,7 +201,6 @@ def process_document_job(job_id: str) -> None:
         document.error_message = None
         db.commit()
     except Exception as exc:
-        job = db.get(Job, job_id)
         if job:
             job.status = "queued" if job.attempts < job.max_attempts else "dead"
             job.error = str(exc)[:4000]
@@ -201,7 +217,8 @@ def process_document_job(job_id: str) -> None:
 
 def process_upload(file: UploadFile, db: Session, tenant_id: str) -> Document:
     """Compatibility wrapper for callers that still expect synchronous ingestion."""
-    document, _, _ = stage_upload(file, db, tenant_id)
-    process_document_job(db.query(Job).filter(Job.tenant_id == tenant_id, Job.idempotency_key == document.checksum).one().id)
+    document, job, _ = stage_upload(file, db, tenant_id)
+    if job.status != "succeeded":
+        process_document_job(job.id)
     db.refresh(document)
     return document

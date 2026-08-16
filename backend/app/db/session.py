@@ -1,15 +1,16 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-import os
 
-# Ensure db directory exists
-os.makedirs(os.path.dirname(settings.SQLITE_DB_URL.replace("sqlite:///", "")), exist_ok=True)
+connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
-engine = create_engine(
-    settings.SQLITE_DB_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db() -> None:
+    from app.db.models import Base
+    Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     db = SessionLocal()

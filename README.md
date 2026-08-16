@@ -1,64 +1,77 @@
-# Enterprise Document Intelligence Agent
+# Enterprise Intelligence Runtime
 
-An agentic AI system for enterprise document intelligence. This MVP allows users to upload various documents (PDF, DOCX, PPTX, XLSX), search across them, chat with the content using Retrieval-Augmented Generation (RAG), and utilize specialized agents to generate reports, compare documents, extract BOMs, and draft presentations.
+> A production-oriented document intelligence platform for heterogeneous enterprise knowledge.
 
-## Features
-- **Document Ingestion:** Parses and chunks PDF, DOCX, PPTX, and XLSX files.
-- **RAG Chat:** Conversational search with citations.
-- **Specialized Agents:**
-  - **Comparison Agent:** Compares two documents.
-  - **Report Agent:** Drafts executive summaries.
-  - **BOM Agent:** Extracts Bill of Materials as structured JSON.
-  - **Presentation Agent:** Generates presentation deck outlines.
-- **Modern UI:** Built with Next.js and Tailwind CSS featuring a glassmorphic dashboard.
+This repository is being evolved from the original MVP into a measurable AI engineering system: document ingestion, structured metadata, retrieval, agent execution, security boundaries, evaluation, observability and reliable asynchronous workflows.
 
-## Architecture
-- **Frontend:** Next.js (App Router), Tailwind CSS
-- **Backend:** FastAPI (Python)
-- **Vector Store:** ChromaDB
-- **Database:** SQLite (Metadata)
-- **AI Orchestration:** LangChain, Google Gemini API
+## Current architecture
 
-## Setup Instructions
+```text
+Next.js UI
+    |
+FastAPI API ---- PostgreSQL/SQLite metadata
+    |             |
+    +---- Redis / worker jobs
+    |
+    +---- Hybrid retrieval -> reranking -> evidence
+    |
+    +---- Agent runtime -> tools -> verification
+    |
+    +---- evaluation / audit / observability
+```
 
-### 1. Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Docker & Docker Compose (optional)
-- Gemini API Key
+## Supported documents
 
-### 2. Backend Setup
+PDF, DOCX, PPTX and XLSX. The parser factory provides a format-specific extension point. The ingestion layer records a checksum, tenant, version and processing status before indexing.
+
+## Engineering goals
+
+- Hybrid dense + sparse retrieval with reranking
+- Evidence-first answers and explicit abstention
+- Tenant isolation, RBAC and document ACLs
+- Prompt-injection and tool-boundary defenses
+- Async, resumable ingestion and idempotent jobs
+- PostgreSQL + Redis production path with SQLite local fallback
+- Evaluation datasets for retrieval, generation, citation and security
+- OpenTelemetry-compatible tracing and structured logs
+- Cost/latency accounting and regression gates in CI
+
+## Local development
+
 ```bash
 cd backend
-python -m venv venv
-# Windows: .\venv\Scripts\activate | Mac/Linux: source venv/bin/activate
+python -m venv .venv
+# Windows: .venv\\Scripts\\activate
+# Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-```
-Create a `.env` file in the `backend` directory:
-```
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-Run the backend:
-```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Frontend Setup
+Set `GEMINI_API_KEY` in `backend/.env`. The application uses SQLite by default for local development. For production, set `DATABASE_URL` to PostgreSQL and `REDIS_URL` to Redis.
+
+Frontend:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-The app will be available at `http://localhost:3000`.
+## API smoke test
 
-## Resume Bullet Points
-- Architected and deployed an Enterprise Document Intelligence Agent utilizing LangChain and Google Gemini, enabling RAG-based semantic search and automated report generation across multi-modal enterprise documents (PDF, PPTX, XLSX, DOCX).
-- Developed a highly modular multi-agent system (Comparison, BOM Extraction, Presentation drafting) that improved data retrieval times and standardized output formatting.
-- Built a modern, responsive frontend dashboard using Next.js and Tailwind CSS to interact with a FastAPI-driven backend supported by ChromaDB vector storage.
+```bash
+curl http://localhost:8000/api/health
+curl http://localhost:8000/api/ready
+```
 
-## Future Improvements
-- Implement authentication and Role-Based Access Control (RBAC).
-- Replace SQLite with PostgreSQL for distributed production deployments.
-- Integrate celery/Redis for truly asynchronous background document processing.
-- Add real-time streaming for LLM responses in the frontend.
+## Evaluation
+
+The `evals/` directory is intentionally part of the product. Add datasets with expected evidence, run retrieval/generation/security evaluations, and record latency, recall, citation correctness and cost. Do not publish invented benchmark numbers; results must come from reproducible runs.
+
+## Security model
+
+Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Production deployments must enable authentication, replace the default secret, restrict CORS and configure PostgreSQL/Redis credentials through secrets.
+
+## Roadmap
+
+See `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/EVALUATION.md` for the implementation contract and benchmark plan.

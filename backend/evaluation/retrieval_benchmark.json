@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "description": "Small deterministic starter set for retrieval regression testing. Replace/extend with domain-specific queries before using as a quality gate.",
+  "cases": [
+    {
+      "id": "sample-001",
+      "query": "What is the document retention policy?",
+      "relevant_chunk_ids": ["demo:retention"]
+    },
+    {
+      "id": "sample-002",
+      "query": "Who can approve a production deployment?",
+      "relevant_chunk_ids": ["demo:deployment-approval"]
+    }
+  ]
+}

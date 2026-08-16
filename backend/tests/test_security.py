@@ -1,6 +1,4 @@
-import pytest
 from app.core.security import detect_prompt_injection, sanitize_retrieved_content
-from app.services.search import search_documents
 
 
 def test_prompt_injection_is_detected():

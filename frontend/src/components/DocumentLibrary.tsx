@@ -12,12 +12,19 @@ export default function DocumentLibrary() {
       const res = await fetch('http://localhost:8000/api/documents');
       const data: unknown = await res.json();
       if (Array.isArray(data)) setDocs(data as Document[]);
-    } catch {
-      setDocs([]);
-    } finally { setLoading(false); }
+    } catch { setDocs([]); }
+    finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { void fetchDocs(); }, [fetchDocs]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('http://localhost:8000/api/documents')
+      .then((res) => res.json() as Promise<unknown>)
+      .then((data) => { if (!cancelled && Array.isArray(data)) setDocs(data as Document[]); })
+      .catch(() => { if (!cancelled) setDocs([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div className="bg-neutral-800/50 backdrop-blur-xl border border-white/10 rounded-2xl p-6">

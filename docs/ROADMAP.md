@@ -19,26 +19,32 @@
 - [ ] domain benchmark expansion and regression gate
 
 ## Enterprise runtime
-- [ ] Celery/Redis worker with resumable checkpoints
+- [x] Celery/Redis worker with resumable checkpoints
 - [ ] PostgreSQL migrations
-- [ ] authenticated identity and persistent RBAC
-- [ ] document ACL filtering before retrieval
-- [ ] idempotency and dead-letter handling
+- [x] authenticated identity and persistent RBAC foundation
+- [x] document ACL filtering before retrieval
+- [x] tenant isolation in authenticated requests
+- [x] idempotent ingestion and dead-letter handling
+- [ ] audit events for security-sensitive actions
 
 ## Intelligence
 - [ ] structured table/layout extraction
 - [ ] semantic document diff
-- [ ] contradiction detection
+- [x] evidence graph baseline
+- [x] claim verification baseline
+- [x] contradiction detection baseline
+- [x] contradiction benchmark fixtures and runner
 - [ ] calculation/tool traces
-- [ ] evidence graph and citation verifier
+- [ ] LLM claim extraction and relation extraction
 - [ ] multimodal/OCR pipeline
 
 ## Platform
 - [ ] OpenTelemetry traces
+- [x] Prometheus request/retrieval/LLM metrics
 - [ ] metrics dashboard
 - [ ] model router and cost controls
 - [ ] cache layers
 - [ ] load tests
-- [ ] security benchmark
-- [ ] CI evaluation regression
+- [x] prompt-injection evaluation primitives and baseline fixtures
+- [ ] CI evaluation regression gate
 - [ ] workflow engine + human approval

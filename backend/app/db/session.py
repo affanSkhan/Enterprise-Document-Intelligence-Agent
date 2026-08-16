@@ -7,14 +7,26 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pr
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
+def _add_column_if_missing(conn, table: str, column: str, ddl: str, inspector) -> None:
+    columns = {c["name"] for c in inspector.get_columns(table)}
+    if column not in columns:
+        conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+
 def init_db() -> None:
     from app.db.models import Base
     Base.metadata.create_all(bind=engine)
-    # Backward-compatible additive migration for installations created before Phase 4.
     inspector = inspect(engine)
-    if "users" in inspector.get_table_names() and "password_hash" not in {c["name"] for c in inspector.get_columns("users")}:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        if "users" in inspector.get_table_names():
+            _add_column_if_missing(conn, "users", "password_hash", "VARCHAR(255)", inspector)
+        if "jobs" in inspector.get_table_names():
+            _add_column_if_missing(conn, "jobs", "idempotency_key", "VARCHAR(128)", inspector)
+            _add_column_if_missing(conn, "jobs", "checkpoint", "VARCHAR(40) DEFAULT 'uploaded'", inspector)
+            _add_column_if_missing(conn, "jobs", "attempts", "INTEGER DEFAULT 0", inspector)
+            _add_column_if_missing(conn, "jobs", "max_attempts", "INTEGER DEFAULT 5", inspector)
+            _add_column_if_missing(conn, "jobs", "available_at", "DATETIME", inspector)
 
 
 def bootstrap_admin() -> None:

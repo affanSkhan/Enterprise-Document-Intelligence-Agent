@@ -15,7 +15,8 @@
 - [x] sparse BM25 index
 - [x] reciprocal-rank fusion
 - [x] cross-encoder reranking
-- [ ] retrieval benchmark and regression gate
+- [x] retrieval benchmark framework
+- [ ] domain benchmark expansion and regression gate
 
 ## Enterprise runtime
 - [ ] Celery/Redis worker with resumable checkpoints

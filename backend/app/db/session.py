@@ -7,7 +7,8 @@ engine = create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pr
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
-def _add_column_if_missing(conn, table: str, column: str, ddl: str, inspector) -> None:
+def _add_column_if_missing(conn, table: str, column: str, ddl: str) -> None:
+    inspector = inspect(conn)
     columns = {c["name"] for c in inspector.get_columns(table)}
     if column not in columns:
         conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
@@ -16,17 +17,16 @@ def _add_column_if_missing(conn, table: str, column: str, ddl: str, inspector) -
 def init_db() -> None:
     from app.db.models import Base
     Base.metadata.create_all(bind=engine)
-    inspector = inspect(engine)
     with engine.begin() as conn:
         inspector = inspect(conn)
         if "users" in inspector.get_table_names():
-            _add_column_if_missing(conn, "users", "password_hash", "VARCHAR(255)", inspector)
+            _add_column_if_missing(conn, "users", "password_hash", "VARCHAR(255)")
         if "jobs" in inspector.get_table_names():
-            _add_column_if_missing(conn, "jobs", "idempotency_key", "VARCHAR(128)", inspector)
-            _add_column_if_missing(conn, "jobs", "checkpoint", "VARCHAR(40) DEFAULT 'uploaded'", inspector)
-            _add_column_if_missing(conn, "jobs", "attempts", "INTEGER DEFAULT 0", inspector)
-            _add_column_if_missing(conn, "jobs", "max_attempts", "INTEGER DEFAULT 5", inspector)
-            _add_column_if_missing(conn, "jobs", "available_at", "DATETIME", inspector)
+            _add_column_if_missing(conn, "jobs", "idempotency_key", "VARCHAR(128)")
+            _add_column_if_missing(conn, "jobs", "checkpoint", "VARCHAR(40) DEFAULT 'uploaded'")
+            _add_column_if_missing(conn, "jobs", "attempts", "INTEGER DEFAULT 0")
+            _add_column_if_missing(conn, "jobs", "max_attempts", "INTEGER DEFAULT 5")
+            _add_column_if_missing(conn, "jobs", "available_at", "TIMESTAMP")
 
 
 def bootstrap_admin() -> None:

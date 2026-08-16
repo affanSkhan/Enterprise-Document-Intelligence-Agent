@@ -43,7 +43,7 @@ class Document(Base):
     file_path: Mapped[str] = mapped_column(String(2048))
     checksum: Mapped[str] = mapped_column(String(64), index=True)
     current_version: Mapped[int] = mapped_column(Integer, default=1)
-    status: Mapped[str] = mapped_column(String(40), default="UPLOADED", index=True)
+    status: Mapped[str] = mapped_column(String(40), default="QUEUED", index=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -83,9 +83,15 @@ class Job(Base):
     type: Mapped[str] = mapped_column(String(80), index=True)
     status: Mapped[str] = mapped_column(String(40), default="queued", index=True)
     payload: Mapped[str] = mapped_column(Text, default="{}")
+    idempotency_key: Mapped[str] = mapped_column(String(128), index=True)
+    checkpoint: Mapped[str] = mapped_column(String(40), default="uploaded")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=5)
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (UniqueConstraint("tenant_id", "type", "idempotency_key", name="uq_job_idempotency"),)
 
 
 class AuditLog(Base):

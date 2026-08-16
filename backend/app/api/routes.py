@@ -6,11 +6,12 @@ from sqlalchemy.orm import Session
 from app.agents.retrieval import chat_with_docs
 from app.agents.specialized import compare_documents, extract_bom, generate_presentation, generate_report
 from app.core.security import detect_prompt_injection
-from app.db.models import Document, DocumentPermission, User
+from app.db.models import Document, DocumentPermission, Job, User
 from app.db.session import get_db
 from app.security.acl import allowed_document_ids, can_read_document
 from app.security.dependencies import CurrentUser, get_current_user, get_tenant_id, require_role
-from app.services.ingestion import process_upload
+from app.services.ingestion import stage_upload
+from app.services.jobs import enqueue_ingestion, job_payload
 from app.services.search import search_documents
 
 router = APIRouter()
@@ -58,12 +59,88 @@ async def ready(db: Session = Depends(get_db)):
     return {"status": "ready"}
 
 
-@router.post("/documents/upload")
-async def upload_document(file: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id), _: str = Depends(require_role("admin", "manager")), db: Session = Depends(get_db)):
+@router.post("/documents/upload", status_code=202)
+async def upload_document(
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+    _: str = Depends(require_role("admin", "manager")),
+    db: Session = Depends(get_db),
+):
     try:
-        return process_upload(file, db, tenant_id)
+        document, job, duplicate = stage_upload(file, db, tenant_id)
+        if not duplicate and job.status == "queued":
+            try:
+                celery_id = enqueue_ingestion(job)
+            except Exception as exc:
+                return {
+                    "document_id": document.id,
+                    "job_id": job.id,
+                    "status": job.status,
+                    "checkpoint": job.checkpoint,
+                    "queued": False,
+                    "error": f"Worker unavailable; job remains durable and can be retried: {exc}",
+                }
+            return {
+                "document_id": document.id,
+                "job_id": job.id,
+                "celery_task_id": celery_id,
+                "status": job.status,
+                "checkpoint": job.checkpoint,
+                "queued": True,
+            }
+        return {
+            "document_id": document.id,
+            "job_id": job.id,
+            "status": job.status,
+            "checkpoint": job.checkpoint,
+            "queued": job.status == "queued",
+            "duplicate": duplicate,
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/jobs/{job_id}")
+async def get_job(job_id: str, tenant_id: str = Depends(get_tenant_id), db: Session = Depends(get_db)):
+    job = db.query(Job).filter(Job.id == job_id, Job.tenant_id == tenant_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    payload = job_payload(job)
+    return {
+        "job_id": job.id,
+        "document_id": payload.get("document_id"),
+        "type": job.type,
+        "status": job.status,
+        "checkpoint": job.checkpoint,
+        "attempts": job.attempts,
+        "max_attempts": job.max_attempts,
+        "error": job.error,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_job(
+    job_id: str,
+    tenant_id: str = Depends(get_tenant_id),
+    _: str = Depends(require_role("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    job = db.query(Job).filter(Job.id == job_id, Job.tenant_id == tenant_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status not in {"dead", "queued"}:
+        raise HTTPException(status_code=409, detail=f"Job is currently {job.status}")
+    job.status = "queued"
+    job.error = None
+    job.attempts = 0
+    db.commit()
+    try:
+        task_id = enqueue_ingestion(job)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Worker unavailable: {exc}") from exc
+    return {"job_id": job.id, "queued": True, "celery_task_id": task_id, "checkpoint": job.checkpoint}
 
 
 @router.get("/documents")

@@ -28,15 +28,19 @@
 - [ ] audit events for security-sensitive actions
 
 ## Intelligence
-- [ ] structured table/layout extraction
-- [ ] semantic document diff
+- [x] structured table/layout extraction baseline
+- [x] provenance-preserving multimodal artifacts
+- [x] version-aware document artifacts
+- [x] semantic document diff
+- [x] numeric/date/risk change classification
 - [x] evidence graph baseline
 - [x] claim verification baseline
 - [x] contradiction detection baseline
 - [x] contradiction benchmark fixtures and runner
 - [ ] calculation/tool traces
 - [ ] LLM claim extraction and relation extraction
-- [ ] multimodal/OCR pipeline
+- [ ] advanced OCR and visual understanding
+- [ ] chart/figure semantic extraction
 
 ## Platform
 - [ ] OpenTelemetry traces
@@ -48,3 +52,4 @@
 - [x] prompt-injection evaluation primitives and baseline fixtures
 - [ ] CI evaluation regression gate
 - [ ] workflow engine + human approval
+- [ ] disaster recovery / backup verification

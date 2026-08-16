@@ -25,7 +25,7 @@
 - [x] document ACL filtering before retrieval
 - [x] tenant isolation in authenticated requests
 - [x] idempotent ingestion and dead-letter handling
-- [ ] audit events for security-sensitive actions
+- [x] tenant-scoped audit event storage and audit API
 
 ## Intelligence
 - [x] structured table/layout extraction baseline
@@ -43,13 +43,14 @@
 - [ ] chart/figure semantic extraction
 
 ## Platform
-- [ ] OpenTelemetry traces
+- [x] OpenTelemetry-compatible tracing foundation
 - [x] Prometheus request/retrieval/LLM metrics
 - [ ] metrics dashboard
-- [ ] model router and cost controls
-- [ ] cache layers
-- [ ] load tests
+- [x] deterministic cost-aware model policy foundation
+- [x] fail-open Redis cache abstraction
+- [x] reproducible API smoke load test
 - [x] prompt-injection evaluation primitives and baseline fixtures
-- [ ] CI evaluation regression gate
-- [ ] workflow engine + human approval
-- [ ] disaster recovery / backup verification
+- [x] deterministic CI evaluation regression gate
+- [x] workflow engine + human approval baseline
+- [x] non-destructive backup connectivity verification
+- [ ] isolated database restore drill

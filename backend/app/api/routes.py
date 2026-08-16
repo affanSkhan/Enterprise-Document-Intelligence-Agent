@@ -18,6 +18,8 @@ router = APIRouter()
 class SearchQuery(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=50)
+    mode: str = Field(default="hybrid", pattern="^(dense|sparse|hybrid)$")
+    rerank: bool = False
 
 
 class ChatQuery(BaseModel):
@@ -52,10 +54,8 @@ async def ready(db: Session = Depends(get_db)):
 
 @router.post("/documents/upload")
 async def upload_document(
-    file: UploadFile = File(...),
-    tenant_id: str = Depends(get_tenant_id),
-    _: str = Depends(require_role("admin", "manager")),
-    db: Session = Depends(get_db),
+    file: UploadFile = File(...), tenant_id: str = Depends(get_tenant_id),
+    _: str = Depends(require_role("admin", "manager")), db: Session = Depends(get_db),
 ):
     try:
         return process_upload(file, db, tenant_id)
@@ -70,7 +70,7 @@ async def documents(tenant_id: str = Depends(get_tenant_id), db: Session = Depen
 
 @router.post("/search")
 async def search(request: SearchQuery, tenant_id: str = Depends(get_tenant_id)):
-    return {"results": search_documents(request.query, request.top_k, tenant_id=tenant_id)}
+    return {"results": search_documents(request.query, request.top_k, tenant_id=tenant_id, mode=request.mode, rerank=request.rerank)}
 
 
 @router.post("/chat")

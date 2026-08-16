@@ -20,6 +20,9 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m compileall app
       - run: PYTHONPATH=. pytest -q
+      - name: Deterministic evaluation gate
+        working-directory: .
+        run: PYTHONPATH=backend python evals/ci_gate.py
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -50,6 +50,7 @@ class Document(Base):
     tenant: Mapped[Tenant] = relationship(back_populates="documents")
     versions: Mapped[list["DocumentVersion"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     permissions: Mapped[list["DocumentPermission"]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    __table_args__ = (UniqueConstraint("tenant_id", "checksum", name="uq_document_tenant_checksum"),)
 
 
 class DocumentVersion(Base):

@@ -1,11 +1,10 @@
 import re
 from typing import Any
 
+from app.db.models import Document, EvidenceClaim, EvidenceEdge, EvidenceEntity
 from sqlalchemy.orm import Session
 
-from app.db.models import Document, EvidenceClaim, EvidenceEdge, EvidenceEntity
-
-ENTITY_RE = re.compile(r"\b(?:[A-Z][\w.-]+(?:\s+[A-Z][\w.-]+){0,3})\b")
+ENTITY_RE = re.compile(r"\b(?:[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\b")
 NEGATION_RE = re.compile(r"\b(not|no|never)\b", re.IGNORECASE)
 
 
@@ -20,8 +19,7 @@ def extract_claims(text: str) -> list[dict[str, Any]]:
     for sentence in sentences:
         sentence = sentence.strip()
         if 20 <= len(sentence) <= 800:
-            claim_type = "numeric" if re.search(r"\b\d+(?:\.\d+)?\b", sentence) else "fact"
-            claims.append({"text": sentence, "claim_type": claim_type, "confidence": 0.55})
+            claims.append({"text": sentence, "claim_type": "fact", "confidence": 0.55})
     return claims[:100]
 
 

@@ -1,11 +1,17 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
+
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-class Base(DeclarativeBase): pass
 
-def utcnow() -> datetime: return datetime.utcnow()
+class Base(DeclarativeBase):
+    pass
+
+
+def utcnow() -> datetime:
+    return datetime.now(UTC)
+
 
 class Tenant(Base):
     __tablename__ = "tenants"
@@ -14,6 +20,7 @@ class Tenant(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     users: Mapped[list["User"]] = relationship(back_populates="tenant")
     documents: Mapped[list["Document"]] = relationship(back_populates="tenant")
+
 
 class User(Base):
     __tablename__ = "users"
@@ -26,6 +33,7 @@ class User(Base):
     tenant: Mapped[Tenant] = relationship(back_populates="users")
     document_permissions: Mapped[list["DocumentPermission"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),)
+
 
 class Document(Base):
     __tablename__ = "documents"
@@ -45,6 +53,7 @@ class Document(Base):
     permissions: Mapped[list["DocumentPermission"]] = relationship(back_populates="document", cascade="all, delete-orphan")
     __table_args__ = (UniqueConstraint("tenant_id", "checksum", name="uq_document_tenant_checksum"),)
 
+
 class DocumentVersion(Base):
     __tablename__ = "document_versions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -56,6 +65,7 @@ class DocumentVersion(Base):
     document: Mapped[Document] = relationship(back_populates="versions")
     __table_args__ = (UniqueConstraint("document_id", "version", name="uq_document_version"),)
 
+
 class DocumentPermission(Base):
     __tablename__ = "document_permissions"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -66,6 +76,7 @@ class DocumentPermission(Base):
     document: Mapped[Document] = relationship(back_populates="permissions")
     user: Mapped[User] = relationship(back_populates="document_permissions")
     __table_args__ = (UniqueConstraint("document_id", "user_id", name="uq_document_user_permission"),)
+
 
 class Job(Base):
     __tablename__ = "jobs"
@@ -84,6 +95,7 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     __table_args__ = (UniqueConstraint("tenant_id", "type", "idempotency_key", name="uq_job_idempotency"),)
 
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -94,6 +106,7 @@ class AuditLog(Base):
     resource_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     details: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
 
 class EvidenceClaim(Base):
     __tablename__ = "evidence_claims"
@@ -107,6 +120,7 @@ class EvidenceClaim(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     __table_args__ = (UniqueConstraint("document_id", "text", name="uq_claim_document_text"),)
 
+
 class EvidenceEntity(Base):
     __tablename__ = "evidence_entities"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
@@ -115,6 +129,7 @@ class EvidenceEntity(Base):
     entity_type: Mapped[str] = mapped_column(String(80), default="unknown")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     __table_args__ = (UniqueConstraint("tenant_id", "canonical_name", "entity_type", name="uq_entity_tenant_name_type"),)
+
 
 class EvidenceEdge(Base):
     __tablename__ = "evidence_edges"

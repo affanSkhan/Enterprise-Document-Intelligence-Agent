@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
@@ -10,6 +10,11 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 def init_db() -> None:
     from app.db.models import Base
     Base.metadata.create_all(bind=engine)
+    # Backward-compatible additive migration for installations created before Phase 4.
+    inspector = inspect(engine)
+    if "users" in inspector.get_table_names() and "password_hash" not in {c["name"] for c in inspector.get_columns("users")}:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
 
 
 def bootstrap_admin() -> None:

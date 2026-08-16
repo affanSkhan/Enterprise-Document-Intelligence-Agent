@@ -30,9 +30,11 @@
 ## Intelligence
 - [ ] structured table/layout extraction
 - [ ] semantic document diff
-- [ ] contradiction detection
+- [x] evidence graph baseline
+- [x] claim verification baseline
+- [x] contradiction detection baseline
 - [ ] calculation/tool traces
-- [ ] evidence graph and citation verifier
+- [ ] LLM claim extraction and relation extraction
 - [ ] multimodal/OCR pipeline
 
 ## Platform

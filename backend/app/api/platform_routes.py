@@ -7,6 +7,7 @@ from app.db.models import Job
 from app.db.session import get_db
 from app.security.dependencies import CurrentUser, get_current_user, get_tenant_id, require_role
 from app.services.audit import list_audit, record_audit
+from app.services.calculator import safe_calculate
 from app.services.workflow import create_workflow, decide_workflow
 
 router = APIRouter(prefix="/platform", tags=["platform"])
@@ -15,6 +16,10 @@ router = APIRouter(prefix="/platform", tags=["platform"])
 class WorkflowRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     data: dict = Field(default_factory=dict)
+
+
+class CalculationRequest(BaseModel):
+    expression: str = Field(min_length=1, max_length=200)
 
 
 @router.get("/audit")
@@ -32,6 +37,16 @@ async def identity(current: CurrentUser = Depends(get_current_user)):
 async def model_policy(query_tokens: int = 200, context_tokens: int = 800, budget_usd: float | None = None, _: CurrentUser = Depends(get_current_user)):
     policy = choose_cost_aware_model(query_tokens, context_tokens, budget_usd=budget_usd)
     return {"model": policy.model, "max_output_tokens": policy.max_output_tokens, "estimated_usd_per_1k_tokens": policy.estimated_usd_per_1k_tokens, "estimate_only": True}
+
+
+@router.post("/calculate")
+async def calculate(request: CalculationRequest, tenant_id: str = Depends(get_tenant_id), current: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        result = safe_calculate(request.expression)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record_audit(db, tenant_id=tenant_id, actor_id=current.id, action="tool.calculate", resource_type="calculation", details={"expression": request.expression})
+    return {"expression": request.expression, "result": result, "tool": "safe-arithmetic", "verified": True}
 
 
 @router.post("/workflows", status_code=201)

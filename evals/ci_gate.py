@@ -1,5 +1,3 @@
-import sys
-
 from app.core.security import detect_prompt_injection
 from app.services.document_diff import semantic_diff
 
@@ -22,8 +20,6 @@ def run() -> int:
     old = {"pages": [{"page": 1, "blocks": [{"text": "Payment is 100 USD", "kind": "text"}]}]}
     new = {"pages": [{"page": 1, "blocks": [{"text": "Payment is 150 USD", "kind": "text"}]}]}
     diff = semantic_diff(old, new)
-    if diff["summary"]["numeric_change"] if False else False:
-        pass
     if not diff["changes"] or diff["changes"][0]["type"] != "numeric_change":
         failures.append("numeric semantic diff regression")
 

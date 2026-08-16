@@ -13,7 +13,7 @@ FastAPI API ---- PostgreSQL/SQLite metadata
     |             |
     +---- Redis / worker jobs
     |
-    +---- Hybrid retrieval -> reranking -> evidence
+    +---- Hybrid retrieval -> reranking -> ACL-filtered evidence
     |
     +---- Agent runtime -> tools -> verification
     |
@@ -28,7 +28,7 @@ PDF, DOCX, PPTX and XLSX. The parser factory provides a format-specific extensio
 
 - Hybrid dense + sparse retrieval with reranking
 - Evidence-first answers and explicit abstention
-- Tenant isolation, RBAC and document ACLs
+- JWT authentication, tenant isolation, RBAC and document ACLs
 - Prompt-injection and tool-boundary defenses
 - Async, resumable ingestion and idempotent jobs
 - PostgreSQL + Redis production path with SQLite local fallback
@@ -48,6 +48,12 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Set `GEMINI_API_KEY` in `backend/.env`. The application uses SQLite by default for local development. For production, set `DATABASE_URL` to PostgreSQL and `REDIS_URL` to Redis.
+
+### Authentication
+
+For production, set `ENABLE_AUTH=true`, replace `SECRET_KEY`, and configure `ADMIN_TENANT_ID`, `ADMIN_TENANT_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`. The configured admin is bootstrapped on startup. Obtain a JWT at `POST /api/auth/token` using OAuth2 form fields `username`, `password`, and the required `tenant_id`.
+
+Document access is enforced before dense/sparse retrieval. `admin` and `manager` roles have tenant-wide document read access; `viewer` users require explicit `read` permissions on each document.
 
 Frontend:
 
@@ -70,7 +76,7 @@ The `evals/` directory is intentionally part of the product. Add datasets with e
 
 ## Security model
 
-Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Production deployments must enable authentication, replace the default secret, restrict CORS and configure PostgreSQL/Redis credentials through secrets.
+Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Authentication and authorization are enforced before document retrieval, so unauthorized chunks are excluded from the candidate set rather than merely hidden after generation.
 
 ## Roadmap
 

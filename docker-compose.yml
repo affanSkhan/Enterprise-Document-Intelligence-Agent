@@ -32,7 +32,7 @@ services:
       DATABASE_URL: postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise
       REDIS_URL: redis://redis:6379/0
     depends_on: [postgres, redis]
-    command: celery -A app.workers.celery_app.celery_app worker --loglevel=INFO
+    command: celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
 
   frontend:
     build: ./frontend

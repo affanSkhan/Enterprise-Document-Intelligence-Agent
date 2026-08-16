@@ -19,12 +19,12 @@
 - [ ] domain benchmark expansion and regression gate
 
 ## Enterprise runtime
-- [ ] Celery/Redis worker with resumable checkpoints
+- [x] Celery/Redis worker with resumable checkpoints
 - [ ] PostgreSQL migrations
 - [x] authenticated identity and persistent RBAC foundation
 - [x] document ACL filtering before retrieval
 - [x] tenant isolation in authenticated requests
-- [ ] idempotency and dead-letter handling
+- [x] idempotent ingestion and dead-letter handling
 - [ ] audit events for security-sensitive actions
 
 ## Intelligence

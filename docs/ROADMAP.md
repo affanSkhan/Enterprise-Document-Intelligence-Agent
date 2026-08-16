@@ -12,8 +12,8 @@
 - [x] architecture/security documentation
 
 ## Retrieval 2.0
-- [ ] sparse BM25 index
-- [ ] reciprocal-rank fusion
+- [x] sparse BM25 index
+- [x] reciprocal-rank fusion
 - [ ] cross-encoder reranking
 - [ ] retrieval benchmark and regression gate
 

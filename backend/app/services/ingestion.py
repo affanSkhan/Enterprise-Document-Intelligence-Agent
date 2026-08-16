@@ -59,9 +59,17 @@ def process_upload(file: UploadFile, db: Session, tenant_id: str) -> Document:
             vectorstore = get_vectorstore()
             vectorstore.add_texts(
                 texts=chunks,
-                metadatas=[{"doc_id": doc_id, "tenant_id": tenant_id,
-                             "filename": filename, "version": 1, "chunk_idx": i}
-                           for i in range(len(chunks))],
+                metadatas=[
+                    {
+                        "chunk_id": f"{doc_id}:v1:c{i}",
+                        "doc_id": doc_id,
+                        "tenant_id": tenant_id,
+                        "filename": filename,
+                        "version": 1,
+                        "chunk_idx": i,
+                    }
+                    for i in range(len(chunks))
+                ],
             )
         document.status = "INDEXED"
         db.commit()

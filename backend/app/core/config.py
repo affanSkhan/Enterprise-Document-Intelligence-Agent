@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     ENABLE_AUTH: bool = False
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ADMIN_TENANT_ID: str = ""
+    ADMIN_TENANT_NAME: str = ""
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
 
     GEMINI_API_KEY: str = ""
     PRIMARY_LLM_MODEL: str = "gemini-2.5-flash"

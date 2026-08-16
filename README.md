@@ -11,9 +11,9 @@ Next.js UI
     |
 FastAPI API ---- PostgreSQL/SQLite metadata
     |             |
-    +---- Redis / worker jobs
+    +---- Redis -> Celery document workers
     |
-    +---- Hybrid retrieval -> reranking -> evidence
+    +---- Hybrid retrieval -> reranking -> ACL-filtered evidence
     |
     +---- Agent runtime -> tools -> verification
     |
@@ -22,13 +22,13 @@ FastAPI API ---- PostgreSQL/SQLite metadata
 
 ## Supported documents
 
-PDF, DOCX, PPTX and XLSX. The parser factory provides a format-specific extension point. The ingestion layer records a checksum, tenant, version and processing status before indexing.
+PDF, DOCX, PPTX and XLSX. The parser factory provides a format-specific extension point. Uploads are persisted first, then processed by a Celery worker through durable `uploaded -> parsed -> chunked -> indexed` checkpoints.
 
 ## Engineering goals
 
 - Hybrid dense + sparse retrieval with reranking
 - Evidence-first answers and explicit abstention
-- Tenant isolation, RBAC and document ACLs
+- JWT authentication, tenant isolation, RBAC and document ACLs
 - Prompt-injection and tool-boundary defenses
 - Async, resumable ingestion and idempotent jobs
 - PostgreSQL + Redis production path with SQLite local fallback
@@ -47,7 +47,25 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+For the asynchronous worker, start Redis and run:
+
+```bash
+celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
+```
+
 Set `GEMINI_API_KEY` in `backend/.env`. The application uses SQLite by default for local development. For production, set `DATABASE_URL` to PostgreSQL and `REDIS_URL` to Redis.
+
+### Authentication
+
+For production, set `ENABLE_AUTH=true`, replace `SECRET_KEY`, and configure `ADMIN_TENANT_ID`, `ADMIN_TENANT_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`. The configured admin is bootstrapped on startup. Obtain a JWT at `POST /api/auth/token` using OAuth2 form fields `username`, `password`, and the required `tenant_id`.
+
+Document access is enforced before dense/sparse retrieval. `admin` and `manager` roles have tenant-wide document read access; `viewer` users require explicit `read` permissions on each document.
+
+### Asynchronous ingestion
+
+`POST /api/documents/upload` returns `202 Accepted` with a durable `job_id`. Poll `GET /api/jobs/{job_id}` for status and checkpoint progress. Failed/dead jobs can be requeued by an authorized admin or manager through `POST /api/jobs/{job_id}/retry`.
+
+Uploads are idempotent by tenant + SHA-256 checksum. Intermediate parsed text and chunk manifests are stored as sidecars so worker retries can resume without restarting earlier stages. Chunk IDs are deterministic, and the indexer checks existing IDs before adding missing chunks.
 
 Frontend:
 
@@ -70,7 +88,7 @@ The `evals/` directory is intentionally part of the product. Add datasets with e
 
 ## Security model
 
-Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Production deployments must enable authentication, replace the default secret, restrict CORS and configure PostgreSQL/Redis credentials through secrets.
+Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Authentication and authorization are enforced before document retrieval, so unauthorized chunks are excluded from the candidate set rather than merely hidden after generation.
 
 ## Roadmap
 

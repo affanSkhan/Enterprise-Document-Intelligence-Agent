@@ -14,7 +14,7 @@
 ## Retrieval 2.0
 - [x] sparse BM25 index
 - [x] reciprocal-rank fusion
-- [ ] cross-encoder reranking
+- [x] cross-encoder reranking
 - [ ] retrieval benchmark and regression gate
 
 ## Enterprise runtime

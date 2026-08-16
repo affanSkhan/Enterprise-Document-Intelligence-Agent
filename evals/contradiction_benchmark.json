@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "description": "Small reproducible benchmark for explicit contradiction detection. Extend with domain-specific pairs before reporting production accuracy.",
+  "cases": [
+    {"id":"c01","claim_a":"The contract expires on 31 December 2026.","claim_b":"The contract does not expire on 31 December 2026.","label":"contradiction"},
+    {"id":"c02","claim_a":"The maximum supported capacity is 100 units.","claim_b":"The maximum supported capacity is 250 units.","label":"unknown"},
+    {"id":"c03","claim_a":"The service is available in Pune.","claim_b":"The service is not available in Pune.","label":"contradiction"},
+    {"id":"c04","claim_a":"The payment term is net 30 days.","claim_b":"The payment term is net 30 days.","label":"same"},
+    {"id":"c05","claim_a":"The device requires 5V input.","claim_b":"The device requires 12V input.","label":"unknown"},
+    {"id":"c06","claim_a":"The report was approved by the compliance team.","claim_b":"The report was not approved by the compliance team.","label":"contradiction"},
+    {"id":"c07","claim_a":"The database backup runs every 24 hours.","claim_b":"The database backup runs every 24 hours.","label":"same"},
+    {"id":"c08","claim_a":"The product is not certified for outdoor use.","claim_b":"The product is certified for outdoor use.","label":"contradiction"}
+  ]
+}

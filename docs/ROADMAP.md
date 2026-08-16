@@ -33,6 +33,7 @@
 - [x] evidence graph baseline
 - [x] claim verification baseline
 - [x] contradiction detection baseline
+- [x] contradiction benchmark fixtures and runner
 - [ ] calculation/tool traces
 - [ ] LLM claim extraction and relation extraction
 - [ ] multimodal/OCR pipeline

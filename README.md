@@ -51,7 +51,7 @@ Set `GEMINI_API_KEY` in `backend/.env`. The application uses SQLite by default f
 
 ### Authentication
 
-For production, set `ENABLE_AUTH=true`, replace `SECRET_KEY`, and configure `ADMIN_TENANT_ID`, `ADMIN_TENANT_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`. The configured admin is bootstrapped on startup. Obtain a JWT at `POST /api/auth/token` using OAuth2 form fields `username` and `password`.
+For production, set `ENABLE_AUTH=true`, replace `SECRET_KEY`, and configure `ADMIN_TENANT_ID`, `ADMIN_TENANT_NAME`, `ADMIN_EMAIL` and `ADMIN_PASSWORD`. The configured admin is bootstrapped on startup. Obtain a JWT at `POST /api/auth/token` using OAuth2 form fields `username`, `password`, and the required `tenant_id`.
 
 Document access is enforced before dense/sparse retrieval. `admin` and `manager` roles have tenant-wide document read access; `viewer` users require explicit `read` permissions on each document.
 

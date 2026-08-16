@@ -37,10 +37,11 @@
 
 ## Platform
 - [ ] OpenTelemetry traces
+- [x] Prometheus request/retrieval/LLM metrics
 - [ ] metrics dashboard
 - [ ] model router and cost controls
 - [ ] cache layers
 - [ ] load tests
-- [ ] security benchmark
-- [ ] CI evaluation regression
+- [x] prompt-injection evaluation primitives and baseline fixtures
+- [ ] CI evaluation regression gate
 - [ ] workflow engine + human approval

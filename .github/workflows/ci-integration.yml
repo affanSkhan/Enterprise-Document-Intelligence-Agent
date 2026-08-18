@@ -35,7 +35,7 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app tests
       - run: ruff check app tests --select F
-      - run: pytest -q tests --ignore=tests/test_phase1_foundation.py
+      - run: PYTHONPATH=. pytest -q tests --ignore=tests/test_phase1_foundation.py
       - name: Deterministic evaluation gate
         working-directory: .
         run: PYTHONPATH=backend python evals/ci_gate.py

@@ -1,0 +1,110 @@
+name: CI Integration and Evaluation
+
+on:
+  push:
+    branches:
+      - main
+      - 'phase-*'
+      - 'phase-*/**'
+      - 'ci/*'
+  pull_request:
+    branches:
+      - main
+      - 'phase-*'
+      - 'phase-*/**'
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: Backend quality and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q app tests
+      - run: ruff check app tests --select F
+      - run: PYTHONPATH=. pytest -q tests --ignore=tests/test_phase1_foundation.py
+      - name: Deterministic evaluation gate
+        working-directory: .
+        run: PYTHONPATH=backend python evals/ci_gate.py
+
+  integration:
+    name: PostgreSQL Redis and API integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: enterprise_doc
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d enterprise_doc"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_doc
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret
+      PYTHONPATH: .
+      ENVIRONMENT: test
+      DEBUG: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Verify PostgreSQL and Redis connectivity
+        run: python -c "import os, redis; from sqlalchemy import create_engine; create_engine(os.environ['DATABASE_URL']).connect().close(); assert redis.from_url(os.environ['REDIS_URL']).ping(); print('PostgreSQL and Redis OK')"
+      - name: Generate and apply Alembic schema smoke migration
+        working-directory: .
+        run: |
+          PYTHONPATH=backend alembic -c alembic.ini revision --autogenerate -m "ci schema smoke"
+          PYTHONPATH=backend alembic -c alembic.ini upgrade head
+      - name: Verify migrated schema
+        run: python -c "from app.db.session import engine; from sqlalchemy import inspect; names=inspect(engine).get_table_names(); print(names); assert names, 'No database tables were created'"
+      - name: FastAPI health and readiness smoke test
+        run: python -c "from fastapi.testclient import TestClient; from app.main import app; c=TestClient(app); r=c.get('/api/health'); assert r.status_code == 200 and r.json()['status'] == 'ok'; r=c.get('/api/ready'); assert r.status_code == 200 and r.json()['status'] == 'ready'; r=c.get('/metrics'); assert r.status_code == 200; print('FastAPI smoke tests OK')"
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

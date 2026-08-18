@@ -1,7 +1,5 @@
 import json
 
-from sqlalchemy.orm import Session
-
 from app.db.models import Job
 from app.worker.tasks import ingest_document
 

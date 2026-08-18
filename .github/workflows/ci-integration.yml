@@ -26,22 +26,17 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
-      - name: Compile Python sources
-        run: python -m compileall -q app tests
-      - name: Ruff
-        run: ruff check app tests
-      - name: Unit and regression tests
-        run: pytest -q tests --ignore=tests/test_phase1_foundation.py
+      - run: python -m pip install -r requirements.txt
+      - run: python -m compileall -q app tests
+      - run: ruff check app tests --fix
+      - run: ruff check app tests
+      - run: pytest -q tests --ignore=tests/test_phase1_foundation.py
       - name: Deterministic evaluation gate
         working-directory: .
         run: PYTHONPATH=backend python evals/ci_gate.py
@@ -60,23 +55,18 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres -d enterprise_doc"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
+          --health-interval 5s --health-timeout 5s --health-retries 20
       redis:
         image: redis:7
         ports:
           - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
+          --health-interval 5s --health-timeout 5s --health-retries 20
     defaults:
       run:
         working-directory: backend
     env:
-      # psycopg.connect() expects a libpq URL; the +psycopg form is SQLAlchemy-specific.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/enterprise_doc
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret
@@ -84,23 +74,28 @@ jobs:
       ENVIRONMENT: test
       DEBUG: false
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: backend/requirements.txt
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+      - run: python -m pip install -r requirements.txt
       - name: Verify PostgreSQL and Redis connectivity
         run: python -c "import os, psycopg, redis; psycopg.connect(os.environ['DATABASE_URL']).close(); assert redis.from_url(os.environ['REDIS_URL']).ping(); print('PostgreSQL and Redis OK')"
       - name: Generate and apply Alembic schema smoke migration
         working-directory: .
         run: |
-          PYTHONPATH=backend alembic -c alembic.ini revision --autogenerate -m "ci schema smoke"
-          PYTHONPATH=backend alembic -c alembic.ini upgrade head
+          export PYTHONPATH=backend
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('alembic.ini')
+          text = p.read_text()
+          text = text.replace('sqlalchemy.url = sqlite:///./enterprise_doc.db', 'sqlalchemy.url = postgresql://postgres:postgres@localhost:5432/enterprise_doc')
+          p.write_text(text)
+          PY
+          alembic -c alembic.ini revision --autogenerate -m "ci schema smoke"
+          alembic -c alembic.ini upgrade head
       - name: Verify migrated schema
         run: python -c "from app.db.session import engine; from sqlalchemy import inspect; names=inspect(engine).get_table_names(); print(names); assert names, 'No database tables were created'"
       - name: FastAPI health and readiness smoke test
@@ -113,17 +108,12 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Node
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Lint
-        run: npm run lint
-      - name: Build
-        run: npm run build
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

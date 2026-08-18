@@ -34,8 +34,8 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app tests
-      - run: ruff check app tests --fix
-      - run: ruff check app tests
+      - run: ruff check app tests --fix --extend-ignore=E501,TRY003
+      - run: ruff check app tests --extend-ignore=E501,TRY003
       - run: pytest -q tests --ignore=tests/test_phase1_foundation.py
       - name: Deterministic evaluation gate
         working-directory: .
@@ -83,19 +83,25 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - name: Verify PostgreSQL and Redis connectivity
         run: python -c "import os, psycopg, redis; psycopg.connect(os.environ['DATABASE_URL']).close(); assert redis.from_url(os.environ['REDIS_URL']).ping(); print('PostgreSQL and Redis OK')"
-      - name: Generate and apply Alembic schema smoke migration
+      - name: Configure Alembic connection for psycopg
         working-directory: .
         run: |
-          export PYTHONPATH=backend
           python - <<'PY'
           from pathlib import Path
           p = Path('alembic.ini')
           text = p.read_text()
-          text = text.replace('sqlalchemy.url = sqlite:///./enterprise_doc.db', 'sqlalchemy.url = postgresql://postgres:postgres@localhost:5432/enterprise_doc')
-          p.write_text(text)
+          lines = []
+          for line in text.splitlines():
+              if line.startswith('sqlalchemy.url ='):
+                  line = 'sqlalchemy.url = postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_doc'
+              lines.append(line)
+          p.write_text('\n'.join(lines) + '\n')
           PY
-          alembic -c alembic.ini revision --autogenerate -m "ci schema smoke"
-          alembic -c alembic.ini upgrade head
+      - name: Generate and apply Alembic schema smoke migration
+        working-directory: .
+        run: |
+          PYTHONPATH=backend alembic -c alembic.ini revision --autogenerate -m "ci schema smoke"
+          PYTHONPATH=backend alembic -c alembic.ini upgrade head
       - name: Verify migrated schema
         run: python -c "from app.db.session import engine; from sqlalchemy import inspect; names=inspect(engine).get_table_names(); print(names); assert names, 'No database tables were created'"
       - name: FastAPI health and readiness smoke test

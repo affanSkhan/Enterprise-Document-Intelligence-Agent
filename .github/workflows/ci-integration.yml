@@ -53,7 +53,7 @@ jobs:
         run: PYTHONPATH=backend python evals/ci_gate.py
 
   integration:
-    name: PostgreSQL and Redis integration
+    name: PostgreSQL Redis and API integration
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -86,6 +86,8 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret
       PYTHONPATH: .
+      ENVIRONMENT: test
+      DEBUG: false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -111,6 +113,9 @@ jobs:
 
       - name: Verify migrated schema
         run: python -c "from app.db.session import engine; from sqlalchemy import inspect; names=inspect(engine).get_table_names(); print(names); assert names, 'No database tables were created'"
+
+      - name: FastAPI health and readiness smoke test
+        run: python -c "from fastapi.testclient import TestClient; from app.main import app; c=TestClient(app); r=c.get('/api/health'); assert r.status_code == 200 and r.json()['status'] == 'ok'; r=c.get('/api/ready'); assert r.status_code == 200 and r.json()['status'] == 'ready'; r=c.get('/metrics'); assert r.status_code == 200; print('FastAPI smoke tests OK')"
 
   frontend:
     name: Frontend lint and build

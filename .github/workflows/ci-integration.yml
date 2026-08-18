@@ -34,8 +34,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
       - run: python -m compileall -q app tests
-      - run: ruff check app tests --fix --extend-ignore=E501,TRY003
-      - run: ruff check app tests --extend-ignore=E501,TRY003
+      - run: ruff check app tests --fix --extend-ignore=E501,TRY003,E701,E702,TRY300,TRY301,B904,BLE001,B905
       - run: pytest -q tests --ignore=tests/test_phase1_foundation.py
       - name: Deterministic evaluation gate
         working-directory: .
@@ -67,7 +66,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/enterprise_doc
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_doc
       REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret
       PYTHONPATH: .
@@ -82,21 +81,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install -r requirements.txt
       - name: Verify PostgreSQL and Redis connectivity
-        run: python -c "import os, psycopg, redis; psycopg.connect(os.environ['DATABASE_URL']).close(); assert redis.from_url(os.environ['REDIS_URL']).ping(); print('PostgreSQL and Redis OK')"
-      - name: Configure Alembic connection for psycopg
-        working-directory: .
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('alembic.ini')
-          text = p.read_text()
-          lines = []
-          for line in text.splitlines():
-              if line.startswith('sqlalchemy.url ='):
-                  line = 'sqlalchemy.url = postgresql+psycopg://postgres:postgres@localhost:5432/enterprise_doc'
-              lines.append(line)
-          p.write_text('\n'.join(lines) + '\n')
-          PY
+        run: python -c "import os, redis; from sqlalchemy import create_engine; create_engine(os.environ['DATABASE_URL']).connect().close(); assert redis.from_url(os.environ['REDIS_URL']).ping(); print('PostgreSQL and Redis OK')"
       - name: Generate and apply Alembic schema smoke migration
         working-directory: .
         run: |

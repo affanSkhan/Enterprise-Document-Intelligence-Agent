@@ -6,8 +6,8 @@ from app.db.session import get_db
 from app.security.acl import can_read_document
 from app.security.dependencies import CurrentUser, get_current_user, get_tenant_id, require_role
 from app.services.document_diff import semantic_diff
-from app.services.multimodal import artifact_path, build_artifact, load_artifact
-from app.services.versioning import upload_new_version, version_artifact_path
+from app.services.multimodal import build_artifact, load_artifact
+from app.services.versioning import upload_new_version
 
 router = APIRouter(prefix="/multimodal", tags=["multimodal"])
 

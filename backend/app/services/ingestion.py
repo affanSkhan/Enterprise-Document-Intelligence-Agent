@@ -24,7 +24,22 @@ def sha256_file(path: Path) -> str:
 
 
 def _sidecar(doc_id: str, suffix: str) -> Path:
-    return Path(settings.UPLOAD_DIR) / f"{doc_id}.{suffix}"
+    return settings.storage_path() / f"{doc_id}.{suffix}"
+
+
+def _document_path(document: Document) -> Path:
+    """Resolve a document path across host and worker processes.
+
+    Older rows stored a relative host path such as ``uploads\\<id>.docx``.
+    The API and Celery worker can have different working directories, so the
+    durable database value must not be treated as an absolute filesystem
+    location. Prefer the stored path when it exists; otherwise resolve the
+    filename inside the configured shared storage directory.
+    """
+    stored = Path(document.file_path)
+    if stored.exists():
+        return stored
+    return settings.storage_path() / stored.name
 
 
 def _existing_job(db: Session, tenant_id: str, checksum: str) -> Job | None:
@@ -41,9 +56,9 @@ def stage_upload(file: UploadFile, db: Session, tenant_id: str) -> tuple[Documen
     if ext not in ALLOWED_EXTENSIONS:
         raise ValueError(f"Unsupported document type: {ext}")
 
-    settings.storage_path()
+    storage = settings.storage_path()
     temp_id = str(uuid.uuid4())
-    path = Path(settings.UPLOAD_DIR) / f"{temp_id}{ext}"
+    path = storage / f"{temp_id}{ext}"
     with path.open("wb") as buffer:
         while chunk := file.file.read(1024 * 1024):
             buffer.write(chunk)
@@ -80,7 +95,9 @@ def stage_upload(file: UploadFile, db: Session, tenant_id: str) -> tuple[Documen
         tenant_id=tenant_id,
         filename=filename,
         file_type=file.content_type or ext,
-        file_path=str(path),
+        # Store a portable storage key, not a host-specific relative path.
+        # The worker resolves this key through settings.storage_path().
+        file_path=path.name,
         checksum=checksum,
         status="QUEUED",
     )
@@ -112,8 +129,11 @@ def _parse(document: Document) -> str:
     parsed_path = _sidecar(document.id, "parsed.txt")
     if parsed_path.exists():
         return parsed_path.read_text(encoding="utf-8")
-    parser = get_parser(document.file_path)
-    text = parser.parse(document.file_path) or ""
+    document_path = _document_path(document)
+    if not document_path.exists():
+        raise FileNotFoundError(f"Document file not found in shared storage: {document_path}")
+    parser = get_parser(str(document_path))
+    text = parser.parse(str(document_path)) or ""
     parsed_path.write_text(text, encoding="utf-8")
     return text
 
@@ -178,7 +198,7 @@ def process_document_job(job_id: str) -> None:
 
         if job.checkpoint == "uploaded":
             text = _parse(document)
-            parser = get_parser(document.file_path)
+            parser = get_parser(str(_document_path(document)))
             if not db.query(DocumentVersion).filter_by(document_id=document.id, version=1).first():
                 db.add(DocumentVersion(document_id=document.id, version=1, parser=parser.__class__.__name__))
                 db.commit()

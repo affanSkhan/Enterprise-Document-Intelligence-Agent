@@ -16,21 +16,27 @@ services:
   backend:
     build: ./backend
     ports: ["8000:8000"]
-    volumes: ["./backend:/app"]
+    volumes:
+      - "./backend:/app"
+      - "./uploads:/shared/uploads"
     env_file: ["./backend/.env"]
     environment:
       DATABASE_URL: postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise
       REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /shared/uploads
     depends_on: [postgres, redis]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
     build: ./backend
-    volumes: ["./backend:/app"]
+    volumes:
+      - "./backend:/app"
+      - "./uploads:/shared/uploads"
     env_file: ["./backend/.env"]
     environment:
       DATABASE_URL: postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise
       REDIS_URL: redis://redis:6379/0
+      UPLOAD_DIR: /shared/uploads
     depends_on: [postgres, redis]
     command: celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
 

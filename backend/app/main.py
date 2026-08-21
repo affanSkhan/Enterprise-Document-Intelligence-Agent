@@ -86,6 +86,37 @@ app.include_router(multimodal_router, prefix=settings.API_V1_PREFIX)
 app.include_router(platform_router, prefix=settings.API_V1_PREFIX)
 
 
+def custom_openapi() -> dict:
+    """Generate a Swagger UI 4-compatible OpenAPI document.
+
+    Recent FastAPI/Pydantic versions describe uploaded files with the JSON
+    Schema ``contentMediaType`` keyword.  Swagger UI 4 expects OpenAPI 3.0's
+    ``format: binary`` instead, otherwise it shows a text input rather than a
+    file chooser.
+    """
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    schema["openapi"] = app.openapi_version
+    for component in schema.get("components", {}).get("schemas", {}).values():
+        for property_schema in component.get("properties", {}).values():
+            if property_schema.get("contentMediaType") == "application/octet-stream":
+                property_schema.pop("contentMediaType", None)
+                property_schema["format"] = "binary"
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+
 @app.on_event("startup")
 def startup():
     init_db()

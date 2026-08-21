@@ -1,6 +1,12 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from swagger_ui_bundle import swagger_ui_path
+
 from app.api.auth_routes import router as auth_router
 from app.api.multimodal_routes import router as multimodal_router
 from app.api.platform_routes import router as platform_router
@@ -18,6 +24,18 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     description="Production-oriented enterprise document intelligence runtime with retrieval, agents, security, evidence graphs, multimodal provenance and evaluation.",
     version="1.4.0",
+    docs_url=None,
+    redoc_url=None,
+)
+
+# FastAPI normally loads Swagger UI assets from a public CDN. That makes /docs
+# fail in offline/restricted DNS environments. Serve the bundled assets locally
+# so the API documentation works without internet access.
+swagger_assets_dir = Path(swagger_ui_path).parent
+app.mount(
+    "/docs-assets",
+    StaticFiles(directory=str(swagger_assets_dir)),
+    name="docs-assets",
 )
 
 origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
@@ -39,6 +57,17 @@ def startup():
 @app.get("/")
 async def root():
     return {"service": settings.PROJECT_NAME, "version": "1.4.0", "status": "running"}
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_docs():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_js_url="/docs-assets/swagger-ui-bundle.js",
+        swagger_css_url="/docs-assets/swagger-ui.css",
+        swagger_favicon_url=None,
+    )
 
 
 @app.get("/metrics", include_in_schema=False)

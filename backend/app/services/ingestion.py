@@ -154,7 +154,7 @@ def _index(document: Document, chunks: list[str]) -> None:
     if not chunks:
         return
     vectorstore = get_vectorstore()
-    collection = get_chroma_client().get_collection("documents")
+    collection = get_chroma_client().get_collection(settings.VECTOR_COLLECTION_NAME)
     ids = [f"{document.id}:v{document.current_version}:c{i}" for i in range(len(chunks))]
     existing = set(collection.get(ids=ids, include=[]).get("ids", []))
     missing = [(i, chunk, ids[i]) for i, chunk in enumerate(chunks) if ids[i] not in existing]

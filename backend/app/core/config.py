@@ -4,7 +4,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # Resolve relative to the backend package rather than the process working
+    # directory.  This keeps a Windows-hosted Uvicorn process aligned with the
+    # Docker services when it is launched from the repository root.
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parents[2] / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     PROJECT_NAME: str = "Enterprise Intelligence Runtime"
     API_V1_PREFIX: str = "/api"
@@ -26,6 +33,10 @@ class Settings(BaseSettings):
     POSTGRES_URL: str = "postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise"
     REDIS_URL: str = "redis://redis:6379/0"
     CHROMA_DB_DIR: str = "./chroma_db"
+    # The original `documents` collection uses a legacy Chroma configuration
+    # format that Chroma 0.6 cannot read. Keep it intact for recovery and use
+    # a versioned collection for all new indexing and retrieval.
+    VECTOR_COLLECTION_NAME: str = "documents_v2"
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_MB: int = 50
     JOB_TTL_SECONDS: int = 86400

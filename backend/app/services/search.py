@@ -13,7 +13,7 @@ from app.observability.metrics import RETRIEVAL_LATENCY, RETRIEVAL_REQUESTS
 
 
 def _tenant_documents(tenant_id: str, allowed_ids: list[str] | None) -> list[Document]:
-    collection = get_chroma_client().get_collection("documents")
+    collection = get_chroma_client().get_collection(settings.VECTOR_COLLECTION_NAME)
     where: dict[str, Any] = {"tenant_id": tenant_id}
     if allowed_ids is not None:
         if not allowed_ids:

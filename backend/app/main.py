@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -28,13 +26,11 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# FastAPI normally loads Swagger UI assets from a public CDN. That makes /docs
-# fail in offline/restricted DNS environments. Serve the bundled assets locally
-# so the API documentation works without internet access.
-swagger_assets_dir = Path(swagger_ui_path).parent
+# FastAPI normally loads Swagger UI assets from a public CDN. Serve the bundled
+# package assets locally so /docs works without external DNS/CDN access.
 app.mount(
     "/docs-assets",
-    StaticFiles(directory=str(swagger_assets_dir)),
+    StaticFiles(directory=str(swagger_ui_path)),
     name="docs-assets",
 )
 
@@ -66,7 +62,7 @@ async def swagger_docs():
         title=f"{app.title} - Swagger UI",
         swagger_js_url="/docs-assets/swagger-ui-bundle.js",
         swagger_css_url="/docs-assets/swagger-ui.css",
-        swagger_favicon_url=None,
+        swagger_favicon_url="/docs-assets/favicon.png",
     )
 
 

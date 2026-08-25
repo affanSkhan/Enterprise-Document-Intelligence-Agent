@@ -4,6 +4,7 @@ from typing import Any
 from langchain_core.documents import Document
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.retrieval.bm25 import BM25Index
 from app.retrieval.fusion import reciprocal_rank_fusion
 from app.retrieval.reranker import rerank_documents

@@ -21,11 +21,13 @@ services:
     volumes:
       - "./backend:/app"
       - "./uploads:/shared/uploads"
+      - "./chroma_db:/shared/chroma_db"
     env_file: ["./backend/.env"]
     environment:
       DATABASE_URL: postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /shared/uploads
+      CHROMA_DB_DIR: /shared/chroma_db
     depends_on: [postgres, redis]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
@@ -34,11 +36,13 @@ services:
     volumes:
       - "./backend:/app"
       - "./uploads:/shared/uploads"
+      - "./chroma_db:/shared/chroma_db"
     env_file: ["./backend/.env"]
     environment:
       DATABASE_URL: postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /shared/uploads
+      CHROMA_DB_DIR: /shared/chroma_db
     depends_on: [postgres, redis]
     command: celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
 

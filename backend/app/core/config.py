@@ -44,9 +44,11 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "BAAI/bge-reranker-base"
     # bge-reranker-base produces small positive logits for some unrelated
-    # pairs, so zero is too permissive for evidence admission. Keep this
-    # configurable so it can be tuned with an evaluation set later.
-    RERANKER_MIN_SCORE: float = 0.1
+    # pairs, so zero is too permissive for evidence admission. The current
+    # benchmark shows 0.02 preserves answer-bearing adjacent chunks while
+    # rejecting the near-zero unsupported query. Tune this with a larger
+    # evaluation set before treating it as calibrated production confidence.
+    RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6
     CHUNK_SIZE: int = 800

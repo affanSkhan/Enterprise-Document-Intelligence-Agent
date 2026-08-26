@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     GEMINI_API_KEY: str = ""
     PRIMARY_LLM_MODEL: str = "gemini-2.5-flash"
-    FAST_LLM_MODEL: str = "gemini-2.5-flash-lite"
+    FAST_LLM_MODEL: str = "gemini-3.5-flash-lite"
 
     DATABASE_URL: str = "sqlite:///./enterprise_intelligence.db"
     POSTGRES_URL: str = "postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise"

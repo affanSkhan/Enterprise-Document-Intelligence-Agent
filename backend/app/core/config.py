@@ -43,7 +43,10 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "BAAI/bge-reranker-base"
-    RERANKER_MIN_SCORE: float = 0.0
+    # bge-reranker-base produces small positive logits for some unrelated
+    # pairs, so zero is too permissive for evidence admission. Keep this
+    # configurable so it can be tuned with an evaluation set later.
+    RERANKER_MIN_SCORE: float = 0.1
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6
     CHUNK_SIZE: int = 800

@@ -82,7 +82,7 @@ async def security_scan(request:ChatQuery):
 @router.post("/evidence/documents/{doc_id}/build")
 async def build_evidence(doc_id:str,tenant_id:str=Depends(get_tenant_id),current:CurrentUser=Depends(get_current_user),db:Session=Depends(get_db)):
     if not can_read_document(db,document_id=doc_id,tenant_id=tenant_id,user_id=current.id,role=current.role): raise HTTPException(status_code=403,detail="Document access denied")
-    collection=get_chroma_client().get_collection("documents")
+    collection=get_chroma_client().get_collection(settings.VECTOR_COLLECTION_NAME)
     payload=collection.get(where={"$and":[{"tenant_id":tenant_id},{"doc_id":doc_id}]},include=["documents","metadatas"])
     chunks=payload.get("documents") or []
     if not chunks: raise HTTPException(status_code=409,detail="Document has not been indexed yet")

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'phase-*']
+    branches: [main, 'phase-*', 'fix/*']
   pull_request:
     branches: [main]
 
@@ -16,10 +16,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m compileall app
-      - run: PYTHONPATH=. pytest -q
+      - run: ruff check app tests
+      - run: PYTHONPATH=. pytest -q --ignore=tests/test_phase1_foundation.py
+      - name: Deterministic evaluation gate
+        working-directory: .
+        run: PYTHONPATH=backend python evals/ci_gate.py
   frontend:
     runs-on: ubuntu-latest
     defaults:

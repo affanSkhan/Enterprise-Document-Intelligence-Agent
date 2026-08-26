@@ -27,7 +27,8 @@ def get_chroma_client() -> chromadb.PersistentClient:
     )
 
 
-def get_vectorstore(collection_name: str = "documents") -> Chroma:
+def get_vectorstore(collection_name: str | None = None) -> Chroma:
+    collection_name = collection_name or settings.VECTOR_COLLECTION_NAME
     return Chroma(
         client=get_chroma_client(),
         collection_name=collection_name,

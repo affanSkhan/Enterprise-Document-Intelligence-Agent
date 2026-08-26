@@ -20,12 +20,13 @@
 
 ## Enterprise runtime
 - [x] Celery/Redis worker with resumable checkpoints
-- [ ] PostgreSQL migrations
+- [x] Alembic configuration and runtime metadata integration
+- [ ] production migration history for every deployed schema change
 - [x] authenticated identity and persistent RBAC foundation
 - [x] document ACL filtering before retrieval
 - [x] tenant isolation in authenticated requests
 - [x] idempotent ingestion and dead-letter handling
-- [ ] audit events for security-sensitive actions
+- [x] tenant-scoped audit event storage and audit API
 
 ## Intelligence
 - [x] structured table/layout extraction baseline
@@ -37,19 +38,22 @@
 - [x] claim verification baseline
 - [x] contradiction detection baseline
 - [x] contradiction benchmark fixtures and runner
-- [ ] calculation/tool traces
-- [ ] LLM claim extraction and relation extraction
-- [ ] advanced OCR and visual understanding
-- [ ] chart/figure semantic extraction
+- [x] safe arithmetic tool with auditable results
+- [x] schema-constrained LLM claim extraction adapter
+- [x] optional vision adapter for figures/charts
+- [ ] benchmarked OCR and visual understanding
+- [ ] benchmarked chart/figure semantic extraction
+- [ ] production tool-trace verifier
 
 ## Platform
-- [ ] OpenTelemetry traces
+- [x] OpenTelemetry-compatible tracing foundation
 - [x] Prometheus request/retrieval/LLM metrics
-- [ ] metrics dashboard
-- [ ] model router and cost controls
-- [ ] cache layers
-- [ ] load tests
+- [x] Grafana dashboard definition
+- [x] deterministic cost-aware model policy foundation
+- [x] fail-open Redis cache abstraction
+- [x] reproducible API smoke load test
 - [x] prompt-injection evaluation primitives and baseline fixtures
-- [ ] CI evaluation regression gate
-- [ ] workflow engine + human approval
-- [ ] disaster recovery / backup verification
+- [x] deterministic CI evaluation regression gate
+- [x] workflow engine + human approval baseline
+- [x] non-destructive backup connectivity verification
+- [ ] isolated database restore drill

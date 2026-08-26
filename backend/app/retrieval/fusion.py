@@ -1,12 +1,16 @@
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def _key(obj: object) -> str:
     """Prefer stable document identity over truncated text for fusion."""
     metadata = getattr(obj, "metadata", {}) or {}
-    return str(metadata.get("chunk_id") or (
-        metadata.get("doc_id"), metadata.get("version"), metadata.get("chunk_idx")
-    ) or getattr(obj, "page_content", repr(obj))[:500])
+    chunk_id = metadata.get("chunk_id")
+    if chunk_id:
+        return str(chunk_id)
+    identity = (metadata.get("doc_id"), metadata.get("version"), metadata.get("chunk_idx"))
+    if any(value is not None for value in identity):
+        return str(identity)
+    return str(getattr(obj, "page_content", repr(obj))[:500])
 
 
 def reciprocal_rank_fusion(

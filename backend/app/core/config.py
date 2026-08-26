@@ -43,6 +43,7 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "BAAI/bge-reranker-base"
+    RERANKER_MIN_SCORE: float = 0.0
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6
     CHUNK_SIZE: int = 800

@@ -7,21 +7,21 @@ from typing import Sequence
 
 from langchain_core.documents import Document
 
-DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+from app.core.config import settings
 
 
 @lru_cache(maxsize=2)
-def get_reranker(model_name: str = DEFAULT_MODEL):
+def get_reranker(model_name: str | None = None):
     from sentence_transformers import CrossEncoder
 
-    return CrossEncoder(model_name)
+    return CrossEncoder(model_name or settings.RERANKER_MODEL)
 
 
 def rerank_documents(
     query: str,
     documents: Sequence[Document],
     top_k: int = 5,
-    model_name: str = DEFAULT_MODEL,
+    model_name: str | None = None,
 ) -> list[tuple[Document, float]]:
     """Score query/document pairs with a cross-encoder and return top results."""
     if not documents or top_k < 1:

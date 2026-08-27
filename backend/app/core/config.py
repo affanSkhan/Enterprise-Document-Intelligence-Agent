@@ -37,7 +37,8 @@ class Settings(BaseSettings):
     JOB_TTL_SECONDS: int = 86400
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
-    RERANKER_MODEL: str = "BAAI/bge-reranker-base"
+    # Lightweight cross-encoder suitable for CPU-only free-tier deployments.
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6

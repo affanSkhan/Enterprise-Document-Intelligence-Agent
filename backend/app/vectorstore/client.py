@@ -2,7 +2,7 @@ from functools import lru_cache
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from app.core.config import settings

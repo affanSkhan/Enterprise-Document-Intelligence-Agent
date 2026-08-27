@@ -4,6 +4,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.agents.retrieval import chat_with_docs
 from app.agents.specialized import compare_documents, extract_bom, generate_presentation, generate_report
+from app.core.config import settings
 from app.core.security import detect_prompt_injection
 from app.db.models import Document, DocumentPermission, Job, User
 from app.db.session import get_db
@@ -68,7 +69,7 @@ async def grant_document_permission(doc_id: str, request: ACLRequest, tenant_id:
     else: db.add(DocumentPermission(document_id=doc_id,user_id=user.id,permission=request.permission))
     db.commit(); return {"document_id":doc_id,"user_id":user.id,"permission":request.permission}
 @router.delete("/documents/{doc_id}/permissions/{user_id}")
-async def revoke_document_permission(doc_id: str,user_id: str,tenant_id: str=Depends(get_tenant_id),_: str=Depends(require_role("admin","manager")),db: Session=Depends(get_db)):
+async def revoke_document_permission(doc_id: str,user_id: str,tenant_id: str=Depends(get_tenant_id),_: str=Depends(require_role("admin","manager")),db:Session=Depends(get_db)):
     permission=db.query(DocumentPermission).join(Document).filter(DocumentPermission.document_id==doc_id,DocumentPermission.user_id==user_id,Document.tenant_id==tenant_id).first()
     if not permission: raise HTTPException(status_code=404,detail="Permission not found")
     db.delete(permission);db.commit();return {"revoked":True,"document_id":doc_id,"user_id":user_id}

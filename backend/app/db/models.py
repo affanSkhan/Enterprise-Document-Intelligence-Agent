@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, LargeBinary, String, Text, Float, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -42,6 +43,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(512))
     file_type: Mapped[str] = mapped_column(String(120))
     file_path: Mapped[str] = mapped_column(String(2048))
+    file_content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     checksum: Mapped[str] = mapped_column(String(64), index=True)
     current_version: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(40), default="QUEUED", index=True)
@@ -64,6 +66,20 @@ class DocumentVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     document: Mapped[Document] = relationship(back_populates="versions")
     __table_args__ = (UniqueConstraint("document_id", "version", name="uq_document_version"),)
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(36), index=True)
+    doc_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), index=True)
+    filename: Mapped[str] = mapped_column(String(512))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    chunk_idx: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(), nullable=True)
+    metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class DocumentPermission(Base):

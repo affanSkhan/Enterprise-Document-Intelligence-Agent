@@ -7,29 +7,47 @@
 }
 
 :root {
-  --background: #171717;
-  --foreground: #ededed;
+  color-scheme: dark;
+  --background: #07111f;
+  --foreground: #e6edf7;
 }
 
+* { box-sizing: border-box; }
+
+html { background: var(--background); }
+
 body {
+  margin: 0;
   color: var(--foreground);
-  background: var(--background);
+  background:
+    radial-gradient(circle at 20% -10%, rgba(42, 96, 160, .22), transparent 34%),
+    radial-gradient(circle at 90% 0%, rgba(72, 54, 164, .18), transparent 28%),
+    linear-gradient(180deg, #07111f 0%, #091523 100%);
   font-family: Arial, Helvetica, sans-serif;
 }
 
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+
+::selection { background: rgba(59, 130, 246, .25); }
+
 @layer utilities {
-  .fade-in {
-    animation: fadeIn 0.5s ease-out forwards;
-  }
+  .fade-in { animation: fadeIn .28s ease-out both; }
+  .slide-up { animation: slideUp .32s ease-out both; }
+  .surface { background: rgba(10, 22, 38, .78); border: 1px solid rgba(148, 163, 184, .13); box-shadow: 0 18px 55px rgba(0,0,0,.18); }
+  .surface-subtle { background: rgba(14, 30, 49, .58); border: 1px solid rgba(148, 163, 184, .1); }
+  .text-muted { color: #8ea1b8; }
+  .text-soft { color: #b9c7d8; }
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulseBar { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+.scrollbar-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: rgba(148,163,184,.18); border-radius: 999px; }
+
+.prose :where(p, li) { color: #c5d1df; }
+.prose :where(strong) { color: #f4f7fb; }
+.prose :where(code) { color: #dbeafe; }

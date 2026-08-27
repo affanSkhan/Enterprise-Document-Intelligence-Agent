@@ -10,10 +10,15 @@ from app.retrieval.fusion import reciprocal_rank_fusion
 from app.retrieval.reranker import rerank_documents
 from app.security.acl import allowed_document_ids
 from app.vectorstore.client import get_chroma_client, get_vectorstore
+from app.vectorstore.pgvector_store import dense_search as pg_dense_search, tenant_documents as pg_tenant_documents
 from app.observability.metrics import RETRIEVAL_LATENCY, RETRIEVAL_REQUESTS
 
 
-def _tenant_documents(tenant_id: str, allowed_ids: list[str] | None) -> list[Document]:
+def _tenant_documents(tenant_id: str, allowed_ids: list[str] | None, db: Session | None = None) -> list[Document]:
+    if settings.use_pgvector:
+        if db is None:
+            return []
+        return pg_tenant_documents(db, tenant_id, allowed_ids)
     collection = get_chroma_client().get_collection(settings.VECTOR_COLLECTION_NAME)
     where: dict[str, Any] = {"tenant_id": tenant_id}
     if allowed_ids is not None:
@@ -26,7 +31,11 @@ def _tenant_documents(tenant_id: str, allowed_ids: list[str] | None) -> list[Doc
     return [Document(page_content=text or "", metadata=metadata or {}) for text, metadata in zip(documents, metadatas)]
 
 
-def _dense_search(query: str, top_k: int, tenant_id: str, allowed_ids: list[str] | None) -> list[tuple[Document, float]]:
+def _dense_search(query: str, top_k: int, tenant_id: str, allowed_ids: list[str] | None, db: Session | None = None) -> list[tuple[Document, float]]:
+    if settings.use_pgvector:
+        if db is None:
+            return []
+        return pg_dense_search(db, query, top_k, tenant_id, allowed_ids)
     vectorstore = get_vectorstore()
     if allowed_ids is not None and not allowed_ids:
         return []
@@ -45,13 +54,16 @@ def search_documents(query: str, top_k: int = 5, tenant_id: str = "default-tenan
     try:
         allowed_ids = allowed_document_ids(db, tenant_id=tenant_id, user_id=user_id, role=role) if db else None
         candidate_k = max(top_k * 4, 10)
-        dense = _dense_search(query, candidate_k, tenant_id, allowed_ids) if mode in {"dense", "hybrid"} else []
+        dense = _dense_search(query, candidate_k, tenant_id, allowed_ids, db) if mode in {"dense", "hybrid"} else []
         sparse = []
         if mode in {"sparse", "hybrid"}:
-            sparse = [(hit.document, hit.score) for hit in BM25Index(_tenant_documents(tenant_id, allowed_ids)).search(query, candidate_k)]
-        if mode == "dense": ranked = dense
-        elif mode == "sparse": ranked = sparse
-        else: ranked = reciprocal_rank_fusion([dense, sparse])
+            sparse = [(hit.document, hit.score) for hit in BM25Index(_tenant_documents(tenant_id, allowed_ids, db)).search(query, candidate_k)]
+        if mode == "dense":
+            ranked = dense
+        elif mode == "sparse":
+            ranked = sparse
+        else:
+            ranked = reciprocal_rank_fusion([dense, sparse])
         if rerank and ranked:
             ranked = rerank_documents(query, [doc for doc, _ in ranked], top_k=top_k)
         return [{"rank": rank, "content": doc.page_content, "metadata": doc.metadata, "score": float(score), "retrieval_mode": mode, "reranked": rerank} for rank, (doc, score) in enumerate(ranked[:top_k], start=1)]

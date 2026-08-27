@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   postgres:
     image: postgres:16-alpine
@@ -8,12 +7,20 @@ services:
       POSTGRES_PASSWORD: enterprise
     ports: ["5433:5432"]
     volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U enterprise -d enterprise"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    # Windows already has a Redis instance on 6379; expose Docker Redis on a
-    # dedicated host port so the Windows API and Docker worker use one broker.
     ports: ["6380:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   backend:
     build: ./backend
@@ -28,8 +35,17 @@ services:
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /shared/uploads
       CHROMA_DB_DIR: /shared/chroma_db
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   worker:
     build: ./backend
@@ -43,7 +59,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       UPLOAD_DIR: /shared/uploads
       CHROMA_DB_DIR: /shared/chroma_db
-    depends_on: [postgres, redis]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
 
   frontend:
@@ -51,6 +71,9 @@ services:
     ports: ["3000:3000"]
     volumes: ["./frontend:/app", "/app/node_modules"]
     command: npm run dev
+    depends_on:
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:

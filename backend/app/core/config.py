@@ -4,9 +4,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Resolve relative to the backend package rather than the process working
-    # directory.  This keeps a Windows-hosted Uvicorn process aligned with the
-    # Docker services when it is launched from the repository root.
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
         env_file_encoding="utf-8",
@@ -32,10 +29,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./enterprise_intelligence.db"
     POSTGRES_URL: str = "postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise"
     REDIS_URL: str = "redis://redis:6379/0"
+    VECTOR_BACKEND: str = "chroma"
     CHROMA_DB_DIR: str = "./chroma_db"
-    # The original `documents` collection uses a legacy Chroma configuration
-    # format that Chroma 0.6 cannot read. Keep it intact for recovery and use
-    # a versioned collection for all new indexing and retrieval.
     VECTOR_COLLECTION_NAME: str = "documents_v2"
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_MB: int = 50
@@ -43,11 +38,6 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "BAAI/bge-reranker-base"
-    # bge-reranker-base produces small positive logits for some unrelated
-    # pairs, so zero is too permissive for evidence admission. The current
-    # benchmark shows 0.02 preserves answer-bearing adjacent chunks while
-    # rejecting the near-zero unsupported query. Tune this with a larger
-    # evaluation set before treating it as calibrated production confidence.
     RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6
@@ -62,6 +52,10 @@ class Settings(BaseSettings):
         path = Path(self.UPLOAD_DIR)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def use_pgvector(self) -> bool:
+        return self.VECTOR_BACKEND.lower() == "pgvector"
 
 
 @lru_cache

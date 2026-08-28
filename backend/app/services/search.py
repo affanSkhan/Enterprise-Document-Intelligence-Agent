@@ -68,7 +68,7 @@ def _expand_adjacent_chunks(
     ranked: list[tuple[Document, float]],
     corpus: list[Document],
     max_neighbors: int = 3,
-    max_results: int = 24,
+    max_results: int = 32,
 ) -> list[tuple[Document, float]]:
     """Expand strong hits with nearby chunks from the same authorized document."""
     if not ranked or not corpus:
@@ -125,21 +125,37 @@ def _expand_adjacent_chunks(
 def _expand_document_context(
     ranked: list[tuple[Document, float]],
     corpus: list[Document],
-    max_chunks_per_document: int = 12,
+    max_chunks_per_document: int = 30,
     max_documents: int = 3,
-    max_results: int = 18,
+    max_results: int = 30,
 ) -> list[tuple[Document, float]]:
-    """Keep enough chunks from relevant documents for exhaustive list answers."""
+    """For broad list questions, retain the complete relevant document sections.
+
+    A normal top-k retriever optimizes precision. That is wrong for questions
+    such as "what projects has Affan worked on?" because the answer can span
+    several adjacent chunks. Once a document has been selected by authorized
+    retrieval, all of its indexed chunks are safe to inspect. Context chunks
+    inherit the strongest direct score from that document so the later
+    evidence threshold cannot silently discard them.
+    """
     if not ranked or not corpus:
         return ranked
 
     relevant_doc_ids: list[str] = []
-    for document, _ in ranked:
-        doc_id = str((document.metadata or {}).get("doc_id") or "")
-        if doc_id and doc_id not in relevant_doc_ids:
+    max_score_by_doc: dict[str, float] = {}
+    for document, score in ranked:
+        metadata = document.metadata or {}
+        doc_id = str(metadata.get("doc_id") or "")
+        if not doc_id:
+            continue
+        max_score_by_doc[doc_id] = max(max_score_by_doc.get(doc_id, float("-inf")), float(score))
+        if doc_id not in relevant_doc_ids:
             relevant_doc_ids.append(doc_id)
         if len(relevant_doc_ids) >= max_documents:
             break
+
+    if not relevant_doc_ids:
+        return ranked
 
     by_doc: dict[str, list[tuple[int, Document]]] = {}
     for document in corpus:
@@ -153,35 +169,16 @@ def _expand_document_context(
         except (TypeError, ValueError):
             continue
 
-    score_by_key: dict[tuple[str, int], float] = {}
-    for document, score in ranked:
-        metadata = document.metadata or {}
-        doc_id = str(metadata.get("doc_id") or "")
-        idx = metadata.get("chunk_idx")
-        if doc_id and idx is not None:
-            try:
-                score_by_key[(doc_id, int(idx))] = float(score)
-            except (TypeError, ValueError):
-                pass
-
     expanded: list[tuple[Document, float]] = []
     for doc_id in relevant_doc_ids:
+        direct_score = max(max_score_by_doc.get(doc_id, 0.0), settings.RERANKER_MIN_SCORE)
         chunks = sorted(by_doc.get(doc_id, []), key=lambda item: item[0])
-        for idx, document in chunks[:max_chunks_per_document]:
-            base_score = score_by_key.get((doc_id, idx))
-            if base_score is None:
-                direct_scores = [
-                    score for (candidate_doc, _), score in score_by_key.items()
-                    if candidate_doc == doc_id
-                ]
-                base_score = max(direct_scores, default=0.02) * 0.90
-            expanded.append((document, float(base_score)))
+        for _, document in chunks[:max_chunks_per_document]:
+            expanded.append((document, direct_score))
         if len(expanded) >= max_results:
             break
 
-    # Preserve strong direct matches while keeping context candidates in the set.
-    expanded.sort(key=lambda item: item[1], reverse=True)
-    return expanded[:max_results]
+    return expanded[:max_results] if expanded else ranked
 
 
 def search_documents(
@@ -204,9 +201,11 @@ def search_documents(
         allowed_ids = allowed_document_ids(db, tenant_id=tenant_id, user_id=user_id, role=role) if db else None
 
         if expand_context:
-            # Broad/list queries need enough recall to cover all items in a section.
+            # Broad/list queries need enough recall to identify the relevant
+            # document(s); the final context expansion then restores section
+            # completeness from the authorized corpus.
             retrieval_k = max(top_k * 3, settings.RETRIEVAL_TOP_K, 18)
-            candidate_k = max(retrieval_k * 4, 40)
+            candidate_k = max(retrieval_k * 4, 60)
         else:
             retrieval_k = top_k
             candidate_k = max(retrieval_k * 4, 10)
@@ -232,8 +231,8 @@ def search_documents(
         if expand_context:
             if not corpus:
                 corpus = _tenant_documents(tenant_id, allowed_ids, db)
-            ranked = _expand_adjacent_chunks(ranked, corpus, max_neighbors=3, max_results=24)
-            ranked = _expand_document_context(ranked, corpus, max_chunks_per_document=12, max_documents=3, max_results=18)
+            ranked = _expand_adjacent_chunks(ranked, corpus, max_neighbors=3, max_results=32)
+            ranked = _expand_document_context(ranked, corpus, max_chunks_per_document=30, max_documents=3, max_results=30)
 
         return [
             {

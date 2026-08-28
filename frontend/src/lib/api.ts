@@ -15,10 +15,10 @@ export function getTenant() { return typeof window === "undefined" ? "" : window
 export function saveSession(tenant: string, session: Session) { window.localStorage.setItem(TOKEN_KEY, session.access_token); window.localStorage.setItem(TENANT_KEY, tenant); }
 export function clearSession() { if (typeof window === "undefined") return; window.localStorage.removeItem(TOKEN_KEY); window.localStorage.removeItem(TENANT_KEY); }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, authenticate = true): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  const token = getToken();
+  const token = authenticate ? getToken() : null;
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const controller = new AbortController();
@@ -30,10 +30,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     try { data = body ? JSON.parse(body) : null; } catch { data = body; }
     if (!res.ok) {
       const detail = typeof data === "object" && data && "detail" in data ? String((data as {detail?: unknown}).detail) : `Request failed (${res.status})`;
-      if (res.status === 401) {
-        // Never leave the UI displaying an authenticated shell while the API
-        // has rejected the stored bearer token. Clear stale credentials and
-        // reload into the login screen so a fresh token is obtained.
+      if (res.status === 401 && authenticate) {
         clearSession();
         if (typeof window !== "undefined") window.location.reload();
       }
@@ -44,6 +41,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Request timed out. The API may be waking up; please try again in a few seconds.");
     }
+    if (error instanceof TypeError) {
+      throw new Error("The API is temporarily unavailable. Please wait a few seconds and try again.");
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -51,8 +51,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function login(tenant: string, email: string, password: string) {
-  // Discard any stale session before authenticating so a previous deployment's
-  // token can never survive a new sign-in attempt.
   clearSession();
   const form = new URLSearchParams();
   form.set("username", email); form.set("password", password); form.set("tenant_id", tenant);
@@ -77,6 +75,9 @@ export async function login(tenant: string, email: string, password: string) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("Sign in timed out. The API may be waking up; please try again in a few seconds.");
     }
+    if (error instanceof TypeError) {
+      throw new Error("The API is temporarily unavailable. Please wait a few seconds and try again.");
+    }
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -84,7 +85,7 @@ export async function login(tenant: string, email: string, password: string) {
 }
 
 export const api = {
-  health: () => request<{status:string}>("/api/health"),
+  health: () => request<{status:string}>("/api/health", {}, false),
   documents: () => request<Document[]>("/api/documents"),
   upload: async (file: File) => { const form = new FormData(); form.append("file", file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>("/api/documents/upload", {method:"POST", body:form}); },
   job: (id: string) => request<Job>(`/api/jobs/${id}`),

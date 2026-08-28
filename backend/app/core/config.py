@@ -38,6 +38,11 @@ class Settings(BaseSettings):
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # The cross-encoder pulls PyTorch/sentence-transformers into the request
+    # process and can exceed Render's free-instance memory once the model is
+    # loaded. Keep it opt-in; the default reranker is lightweight and pure
+    # Python, while the cross-encoder remains available on larger instances.
+    ENABLE_CROSS_ENCODER_RERANKER: bool = False
     RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6

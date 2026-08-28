@@ -37,7 +37,6 @@ class Settings(BaseSettings):
     JOB_TTL_SECONDS: int = 86400
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
-    # Lightweight cross-encoder suitable for CPU-only free-tier deployments.
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
@@ -45,7 +44,9 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 120
 
-    CORS_ORIGINS: str = "http://localhost:3000"
+    # Keep the production UI origin in the application defaults so a Render
+    # deployment remains CORS-safe even if the environment variable is omitted.
+    CORS_ORIGINS: str = "https://enterprise-doc-intelligence-ui.onrender.com,http://localhost:3000"
     OTEL_SERVICE_NAME: str = "enterprise-intelligence-runtime"
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
 

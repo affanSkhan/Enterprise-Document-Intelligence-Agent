@@ -55,7 +55,15 @@ def bootstrap_admin() -> None:
         user = db.query(User).filter(User.tenant_id == tenant.id, User.email == settings.ADMIN_EMAIL).first()
         if not user:
             db.add(User(tenant_id=tenant.id, email=settings.ADMIN_EMAIL, password_hash=hash_password(settings.ADMIN_PASSWORD), role="admin", is_active=True))
-            db.commit()
+        else:
+            # Keep the database credential synchronized with the explicitly
+            # configured deployment secret. Previously existing users kept an
+            # old hash forever, causing valid Render ADMIN_PASSWORD values to
+            # fail with 401 after redeployments or environment changes.
+            user.password_hash = hash_password(settings.ADMIN_PASSWORD)
+            user.role = "admin"
+            user.is_active = True
+        db.commit()
     finally:
         db.close()
 

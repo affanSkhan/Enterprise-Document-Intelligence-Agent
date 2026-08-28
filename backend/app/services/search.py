@@ -64,16 +64,10 @@ def _dense_search(query: str, top_k: int, tenant_id: str, allowed_ids: list[str]
     return vectorstore.similarity_search_with_score(query, k=top_k, filter=filter_)
 
 
-def _expand_adjacent_chunks(
-    ranked: list[tuple[Document, float]],
-    corpus: list[Document],
-    max_neighbors: int = 3,
-    max_results: int = 32,
-) -> list[tuple[Document, float]]:
+def _expand_adjacent_chunks(ranked: list[tuple[Document, float]], corpus: list[Document], max_neighbors: int = 3, max_results: int = 32) -> list[tuple[Document, float]]:
     """Expand strong hits with nearby chunks from the same authorized document."""
     if not ranked or not corpus:
         return ranked
-
     by_doc: dict[str, dict[int, Document]] = {}
     for document in corpus:
         metadata = document.metadata or {}
@@ -122,30 +116,15 @@ def _expand_adjacent_chunks(
     return expanded[:max_results]
 
 
-def _expand_document_context(
-    ranked: list[tuple[Document, float]],
-    corpus: list[Document],
-    max_chunks_per_document: int = 30,
-    max_documents: int = 3,
-    max_results: int = 30,
-) -> list[tuple[Document, float]]:
-    """For broad list questions, retain the complete relevant document sections.
-
-    A normal top-k retriever optimizes precision. That is wrong for questions
-    such as "what projects has Affan worked on?" because the answer can span
-    several adjacent chunks. Once a document has been selected by authorized
-    retrieval, all of its indexed chunks are safe to inspect. Context chunks
-    inherit the strongest direct score from that document so the later
-    evidence threshold cannot silently discard them.
-    """
+def _expand_document_context(ranked: list[tuple[Document, float]], corpus: list[Document], max_chunks_per_document: int = 30, max_documents: int = 3, max_results: int = 30) -> list[tuple[Document, float]]:
+    """For broad list questions, retain complete relevant document context."""
     if not ranked or not corpus:
         return ranked
 
     relevant_doc_ids: list[str] = []
     max_score_by_doc: dict[str, float] = {}
     for document, score in ranked:
-        metadata = document.metadata or {}
-        doc_id = str(metadata.get("doc_id") or "")
+        doc_id = str((document.metadata or {}).get("doc_id") or "")
         if not doc_id:
             continue
         max_score_by_doc[doc_id] = max(max_score_by_doc.get(doc_id, float("-inf")), float(score))
@@ -181,17 +160,7 @@ def _expand_document_context(
     return expanded[:max_results] if expanded else ranked
 
 
-def search_documents(
-    query: str,
-    top_k: int = 5,
-    tenant_id: str = "default-tenant",
-    mode: str = "hybrid",
-    rerank: bool = False,
-    db: Session | None = None,
-    user_id: str = "dev-user",
-    role: str = "admin",
-    expand_context: bool = False,
-) -> list[dict[str, Any]]:
+def search_documents(query: str, top_k: int = 5, tenant_id: str = "default-tenant", mode: str = "hybrid", rerank: bool = False, db: Session | None = None, user_id: str = "dev-user", role: str = "admin", expand_context: bool = False) -> list[dict[str, Any]]:
     if top_k < 1:
         raise ValueError("top_k must be positive")
     if mode not in {"dense", "sparse", "hybrid"}:
@@ -201,11 +170,8 @@ def search_documents(
         allowed_ids = allowed_document_ids(db, tenant_id=tenant_id, user_id=user_id, role=role) if db else None
 
         if expand_context:
-            # Broad/list queries need enough recall to identify the relevant
-            # document(s); the final context expansion then restores section
-            # completeness from the authorized corpus.
-            retrieval_k = max(top_k * 3, settings.RETRIEVAL_TOP_K, 18)
-            candidate_k = max(retrieval_k * 4, 60)
+            retrieval_k = max(top_k * 5, settings.RETRIEVAL_TOP_K, 30)
+            candidate_k = max(retrieval_k * 4, 120)
         else:
             retrieval_k = top_k
             candidate_k = max(retrieval_k * 4, 10)

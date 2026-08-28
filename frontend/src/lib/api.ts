@@ -13,7 +13,7 @@ export type AgentResponse = { result?: string | object | Array<unknown> };
 export function getToken() { return typeof window === "undefined" ? null : window.localStorage.getItem(TOKEN_KEY); }
 export function getTenant() { return typeof window === "undefined" ? "" : window.localStorage.getItem(TENANT_KEY) || ""; }
 export function saveSession(tenant: string, session: Session) { window.localStorage.setItem(TOKEN_KEY, session.access_token); window.localStorage.setItem(TENANT_KEY, tenant); }
-export function clearSession() { window.localStorage.removeItem(TOKEN_KEY); window.localStorage.removeItem(TENANT_KEY); }
+export function clearSession() { if (typeof window === "undefined") return; window.localStorage.removeItem(TOKEN_KEY); window.localStorage.removeItem(TENANT_KEY); }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -30,6 +30,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     try { data = body ? JSON.parse(body) : null; } catch { data = body; }
     if (!res.ok) {
       const detail = typeof data === "object" && data && "detail" in data ? String((data as {detail?: unknown}).detail) : `Request failed (${res.status})`;
+      if (res.status === 401) {
+        // Never leave the UI displaying an authenticated shell while the API
+        // has rejected the stored bearer token. Clear stale credentials and
+        // reload into the login screen so a fresh token is obtained.
+        clearSession();
+        if (typeof window !== "undefined") window.location.reload();
+      }
       throw new Error(detail);
     }
     return data as T;
@@ -44,9 +51,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function login(tenant: string, email: string, password: string) {
-  // Keep the credentials entered in the UI intact. Production must not silently
-  // rewrite tenant/email values because the API authenticates against the same
-  // tenant and user that the operator selected.
+  // Discard any stale session before authenticating so a previous deployment's
+  // token can never survive a new sign-in attempt.
+  clearSession();
   const form = new URLSearchParams();
   form.set("username", email); form.set("password", password); form.set("tenant_id", tenant);
   const controller = new AbortController();

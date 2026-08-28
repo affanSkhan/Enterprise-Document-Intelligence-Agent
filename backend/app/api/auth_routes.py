@@ -1,0 +1,28 @@
+from fastapi import APIRouter, Depends, Form, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.db.models import User
+from app.db.session import get_db
+from app.security.auth import create_access_token, verify_password
+from app.services.audit import record_audit
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post("/token")
+def login(
+    form: OAuth2PasswordRequestForm = Depends(),
+    tenant_id: str = Form(..., min_length=1, max_length=36),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.tenant_id == tenant_id, User.email == form.username).first()
+    if not user or not user.is_active or not user.password_hash or not verify_password(form.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials", headers={"WWW-Authenticate": "Bearer"})
+    record_audit(db, tenant_id=user.tenant_id, actor_id=user.id, action="auth.login", resource_type="user", resource_id=user.id)
+    return {
+        "access_token": create_access_token(user_id=user.id, tenant_id=user.tenant_id, role=user.role),
+        "token_type": "bearer",
+        "expires_in": 60 * settings.ACCESS_TOKEN_EXPIRE_MINUTES,
+    }

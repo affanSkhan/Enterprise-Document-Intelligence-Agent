@@ -1,53 +1,114 @@
 "use client";
 
-import { useState } from 'react';
-import DocumentLibrary from '@/components/DocumentLibrary';
-import UploadPanel from '@/components/UploadPanel';
-import ChatInterface from '@/components/ChatInterface';
-import AgentActions from '@/components/AgentActions';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { api, clearSession, getTenant, getToken, login, type ChatResponse, type Document } from "@/lib/api";
 
-type Tab = 'library' | 'chat' | 'agents';
-const tabs: Tab[] = ['library', 'chat', 'agents'];
+type Tab = "overview" | "documents" | "chat" | "workflows";
+type Message = { role: "user" | "assistant"; content: string; response?: ChatResponse };
+
+function safeText(value: unknown, fallback = "No answer returned."): string {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+  try { return JSON.stringify(value); } catch { return fallback; }
+}
+
+function icon(name: string) {
+  const paths: Record<string, string> = {
+    grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+    file: "M6 3.8A1.8 1.8 0 0 1 7.8 2h6.4L20 7.8v12.4A1.8 1.8 0 0 1 18.2 22H7.8A1.8 1.8 0 0 1 6 20.2V3.8Z M14 2v6h6 M9 12h6M9 16h6",
+    chat: "M5 5.5A3.5 3.5 0 0 1 8.5 2h7A3.5 3.5 0 0 1 19 5.5v6a3.5 3.5 0 0 1-3.5 3.5H13l-4.5 4v-4.2A3.5 3.5 0 0 1 5 12V5.5Z",
+    spark: "M12 2.5l1.8 5.7 5.7 1.8-5.7 1.8-1.8 5.7-1.8-5.7-5.7-1.8 5.7-1.8L12 2.5ZM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z",
+    shield: "M12 3 20 6v5.2c0 4.8-3.1 8.1-8 9.8-4.9-1.7-8-5-8-9.8V6l8-3Z M9 12l2 2 4-4",
+    logout: "M9 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H9M14 8l4 4-4 4M18 12H9",
+    refresh: "M20 11a8 8 0 0 0-14.9-3.9L4 9m0 0V5m0 4h4M4 13a8 8 0 0 0 14.9 3.9L20 15m0 0v4m0-4h-4",
+    arrow: "M5 12h13m-5-5 5 5-5 5",
+  };
+  return <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}><path d={paths[name] || paths.grid} /></svg>;
+}
+
+function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "green" | "amber" | "blue" | "red" }) {
+  const styles = {
+    neutral: "border-slate-700 bg-slate-800/50 text-slate-300",
+    green: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
+    amber: "border-amber-500/20 bg-amber-500/10 text-amber-300",
+    blue: "border-blue-500/20 bg-blue-500/10 text-blue-300",
+    red: "border-red-500/20 bg-red-500/10 text-red-300",
+  };
+  return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${styles[tone]}`}>{children}</span>;
+}
+
+const formatDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
+};
+
+function LoginScreen({ onLogin }: { onLogin: (tenant: string, email: string, password: string) => Promise<void> }) {
+  const [tenant, setTenant] = useState("local-test-tenant"); const [email, setEmail] = useState("admin@local.test"); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setError(""); try { await onLogin(tenant.trim(), email.trim(), password); } catch (err) { setError(err instanceof Error ? err.message : "Unable to sign in"); } finally { setBusy(false); } };
+  return <main className="min-h-screen px-6 py-10"><div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl items-center justify-center"><div className="grid w-full overflow-hidden rounded-3xl border border-slate-700/70 bg-slate-950/80 shadow-2xl lg:grid-cols-[1.15fr_.85fr]"><div className="hidden min-h-[620px] flex-col justify-between border-r border-slate-800 bg-[radial-gradient(circle_at_30%_20%,rgba(37,99,235,.18),transparent_35%),linear-gradient(160deg,#0a1628,#07111f)] p-12 lg:flex"><div><div className="mb-10 flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-500/10 text-blue-300">{icon("spark")}</div><div><div className="text-lg font-semibold text-white">Enterprise Intelligence</div><div className="text-xs text-slate-500">Secure knowledge workspace</div></div></div><p className="max-w-lg text-4xl font-semibold leading-tight tracking-tight text-white">Turn enterprise documents into <span className="text-blue-300">decision-ready intelligence.</span></p><p className="mt-6 max-w-xl text-sm leading-7 text-slate-400">Evidence-grounded answers, secure retrieval, asynchronous ingestion and controlled AI workflows designed around enterprise trust boundaries.</p><div className="mt-10 grid max-w-xl grid-cols-2 gap-3 text-xs text-slate-300"><div className="surface-subtle rounded-2xl p-4">Hybrid retrieval + reranking</div><div className="surface-subtle rounded-2xl p-4">Tenant & document ACLs</div><div className="surface-subtle rounded-2xl p-4">Explicit abstention</div><div className="surface-subtle rounded-2xl p-4">Auditable evidence</div></div></div><div className="text-xs text-slate-500"><span className="mr-2 inline-block h-2 w-2 rounded-full bg-emerald-400" />Runtime ready · FastAPI · PostgreSQL · Redis · Chroma</div></div><div className="p-8 sm:p-12"><div className="mx-auto max-w-md"><div className="mb-8 text-lg font-semibold text-white lg:hidden">Enterprise Intelligence</div><p className="text-sm font-medium text-blue-300">Welcome back</p><h1 className="mt-2 text-3xl font-semibold tracking-tight text-white">Sign in to your workspace</h1><p className="mt-3 text-sm leading-6 text-slate-400">Use your organization identity to access documents and intelligence workflows.</p><form onSubmit={submit} className="mt-8 space-y-5"><label className="block"><span className="mb-2 block text-xs font-medium text-slate-300">Tenant ID</span><input value={tenant} onChange={e => setTenant(e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label><label className="block"><span className="mb-2 block text-xs font-medium text-slate-300">Work email</span><input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label><label className="block"><span className="mb-2 block text-xs font-medium text-slate-300">Password</span><input required type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-sm text-white outline-none focus:border-blue-500" /></label>{error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}<button disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50">{busy ? "Signing in…" : "Sign in"} {icon("arrow")}</button></form><div className="mt-8 border-t border-slate-800 pt-6 text-xs leading-5 text-slate-500">Production environment · authentication and authorization are enforced by the API.</div></div></div></div></div></main>;
+}
+
+function AppShell({ onLogout, active, setActive }: { onLogout: () => void; active: Tab; setActive: (tab: Tab) => void }) {
+  const items: [Tab, string, string][] = [["overview", "Overview", "grid"], ["documents", "Documents", "file"], ["chat", "Ask Intelligence", "chat"], ["workflows", "Workflows", "spark"]];
+  return <aside className="hidden w-[248px] shrink-0 border-r border-slate-800 bg-slate-950/85 lg:flex lg:flex-col"><div className="flex h-20 items-center gap-3 border-b border-slate-800 px-6"><div className="flex h-9 w-9 items-center justify-center rounded-xl border border-blue-400/20 bg-blue-500/10 text-blue-300">{icon("spark")}</div><div><div className="text-sm font-semibold text-white">Enterprise</div><div className="text-[11px] text-slate-500">Intelligence Platform</div></div></div><nav className="space-y-1 px-3 py-5">{items.map(([id, label, ico]) => <button key={id} onClick={() => setActive(id)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${active === id ? "bg-blue-500/10 text-blue-300" : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"}`}>{icon(ico)}{label}</button>)}</nav><div className="mt-auto p-3"><div className="surface-subtle rounded-2xl p-4"><div className="flex items-center justify-between"><span className="text-xs font-medium text-slate-300">Security posture</span><Badge tone="green">Protected</Badge></div><p className="mt-2 text-[11px] leading-5 text-slate-500">Tenant isolation, document ACLs and evidence controls are active.</p></div><button onClick={onLogout} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-500 hover:bg-slate-900 hover:text-slate-200">{icon("logout")}Sign out</button></div></aside>;
+}
+
+function Topbar({ tenant, role, health, active, setActive }: { tenant: string; role?: string; health: boolean; active: Tab; setActive: (tab: Tab) => void }) {
+  return <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-800 bg-slate-950/80 px-5 backdrop-blur-xl lg:px-8"><div><div className="hidden text-xs text-slate-500 sm:block">Workspace / {active[0].toUpperCase() + active.slice(1)}</div><div className="mt-1 text-sm font-semibold text-white lg:text-base">Enterprise Intelligence</div></div><div className="flex items-center gap-3"><div className="hidden rounded-full border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs text-slate-400 sm:block">{tenant}</div><Badge tone={health ? "green" : "red"}>{health ? "Operational" : "API offline"}</Badge><div className="hidden text-right sm:block"><div className="text-xs font-medium text-slate-200">{role || "user"}</div><div className="text-[10px] text-slate-500">Authenticated session</div></div><select value={active} onChange={e => setActive(e.target.value as Tab)} className="rounded-lg border border-slate-800 bg-slate-900 px-2 py-2 text-xs text-slate-300 lg:hidden"><option value="overview">Overview</option><option value="documents">Documents</option><option value="chat">Ask Intelligence</option><option value="workflows">Workflows</option></select></div></header>;
+}
+
+function Overview({ docs, onNavigate }: { docs: Document[]; onNavigate: (tab: Tab) => void }) {
+  const indexed = docs.filter(d => String(d.status).toUpperCase() === "INDEXED").length;
+  return <div className="space-y-8 fade-in"><div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]"><section className="rounded-3xl border border-slate-700/70 bg-[radial-gradient(circle_at_75%_0%,rgba(37,99,235,.15),transparent_38%),linear-gradient(135deg,rgba(12,27,46,.95),rgba(8,18,31,.95))] p-7 sm:p-9"><Badge tone="blue">AI document workspace</Badge><h2 className="mt-5 max-w-2xl text-3xl font-semibold tracking-tight text-white sm:text-4xl">From files to <span className="text-blue-300">trusted answers.</span></h2><p className="mt-4 max-w-2xl text-sm leading-7 text-slate-400">Search controlled enterprise knowledge with hybrid retrieval, reranking, evidence filtering and explicit abstention.</p><div className="mt-7 flex flex-wrap gap-3"><button onClick={() => onNavigate("chat")} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500">Ask your documents</button><button onClick={() => onNavigate("documents")} className="rounded-xl border border-slate-700 bg-slate-900/70 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800">View library</button></div></section><section className="surface rounded-3xl p-6"><div className="flex items-center justify-between"><div><div className="text-xs uppercase tracking-wider text-slate-500">Security baseline</div><div className="mt-2 text-xl font-semibold text-white">Trust controls</div></div>{icon("shield")}</div><div className="mt-6 space-y-4">{["Tenant isolation", "Document ACL", "Evidence gate", "Prompt defense"].map(x => <div key={x} className="flex items-center justify-between border-b border-slate-800 pb-4 last:border-0"><span className="text-sm text-slate-300">{x}</span><Badge tone="green">Active</Badge></div>)}</div></section></div><div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{[["Accessible documents", docs.length], ["Indexed", indexed], ["In progress", docs.length - indexed], ["Retrieval", "Hybrid + rerank"]].map(([label, value]) => <div key={String(label)} className="surface rounded-2xl p-5"><div className="text-xs text-slate-500">{label}</div><div className="mt-3 text-xl font-semibold text-white">{value}</div></div>)}</div><section className="surface rounded-3xl p-6"><div className="flex items-center justify-between"><div><div className="text-xs uppercase tracking-wider text-slate-500">Recent knowledge</div><div className="mt-1 text-lg font-semibold text-white">Latest documents</div></div><button onClick={() => onNavigate("documents")} className="text-xs text-blue-300">Open library</button></div><div className="mt-5 divide-y divide-slate-800">{docs.slice(0, 5).map(d => <div key={d.id} className="flex items-center justify-between py-4"><div className="min-w-0"><div className="truncate text-sm font-medium text-slate-200">{d.filename}</div><div className="mt-1 text-xs text-slate-500">{d.file_type} · {formatDate(d.created_at)}</div></div><Badge tone={String(d.status).toUpperCase() === "INDEXED" ? "green" : "amber"}>{String(d.status).toLowerCase()}</Badge></div>)}{!docs.length && <div className="py-12 text-center text-sm text-slate-500">No accessible documents yet.</div>}</div></section></div>;
+}
+
+function Documents({ docs, onRefresh, canUpload }: { docs: Document[]; onRefresh: () => Promise<void>; canUpload: boolean }) {
+  const [file, setFile] = useState<File | null>(null); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
+  const upload = async () => { if (!file || busy) return; setBusy(true); setMessage(""); try { const r = await api.upload(file); let status = "queued"; for (let i = 0; i < 20; i++) { await new Promise(resolve => setTimeout(resolve, 1000)); const j = await api.job(r.job_id); status = j.status; if (status !== "queued" && status !== "running") break; } await onRefresh(); setMessage(status === "succeeded" ? "Document indexed successfully." : `Processing status: ${status}`); setFile(null); } catch (err) { setMessage(err instanceof Error ? err.message : "Upload failed"); } finally { setBusy(false); } };
+  return <div className="space-y-6 fade-in"><section className="surface rounded-3xl p-6 sm:p-7"><div className="flex items-end justify-between"><div><div className="text-xs uppercase tracking-wider text-slate-500">Knowledge base</div><h2 className="mt-1 text-2xl font-semibold text-white">Document library</h2></div><button onClick={() => void onRefresh()} className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-300">{icon("refresh")}Refresh</button></div><div className="mt-6 overflow-hidden rounded-2xl border border-slate-800"><div className="grid grid-cols-[1.4fr_.6fr_.7fr_.6fr] bg-slate-900/70 px-4 py-3 text-[10px] uppercase tracking-wider text-slate-500"><div>Document</div><div>Type</div><div>Added</div><div>Status</div></div>{docs.map(d => <div key={d.id} className="grid grid-cols-[1.4fr_.6fr_.7fr_.6fr] items-center border-t border-slate-800 px-4 py-4 text-xs"><div className="truncate pr-3 font-medium text-slate-200">{d.filename}</div><div className="text-slate-400">{d.file_type}</div><div className="text-slate-500">{formatDate(d.created_at)}</div><Badge tone={String(d.status).toUpperCase() === "INDEXED" ? "green" : "amber"}>{String(d.status).toLowerCase()}</Badge></div>)}{!docs.length && <div className="px-6 py-16 text-center text-sm text-slate-500">No accessible documents.</div>}</div></section>{canUpload && <section className="surface rounded-3xl p-6 sm:p-7"><div className="text-xs uppercase tracking-wider text-slate-500">Ingestion</div><h3 className="mt-1 text-lg font-semibold text-white">Add to knowledge base</h3><div className="mt-5 rounded-2xl border border-dashed border-slate-700 bg-slate-900/30 p-8 text-center"><input id="doc-file" type="file" accept=".pdf,.docx,.pptx,.xlsx" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} /><label htmlFor="doc-file" className="cursor-pointer"><div className="text-sm font-medium text-slate-200">{file ? file.name : "Choose a document"}</div><div className="mt-2 text-xs text-slate-600">PDF · DOCX · PPTX · XLSX · max 50 MB</div></label></div><div className="mt-4 flex items-center gap-3"><button onClick={() => void upload()} disabled={!file || busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{busy ? "Indexing…" : "Upload & index"}</button>{message && <span className="text-xs text-slate-400">{message}</span>}</div></section>}</div>;
+}
+
+function Chat() {
+  const [messages, setMessages] = useState<Message[]>([]); const [input, setInput] = useState(""); const [busy, setBusy] = useState(false); const bottom = useRef<HTMLDivElement>(null);
+  useEffect(() => { bottom.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, busy]);
+  const send = async () => {
+    const question = input.trim(); if (!question || busy) return;
+    setMessages(prev => [...prev, { role: "user", content: question }]); setInput(""); setBusy(true);
+    try {
+      const raw = await api.chat(question, 6);
+      const answer = safeText(raw?.answer);
+      const safeResponse: ChatResponse = {
+        answer,
+        evidence: Array.isArray(raw?.evidence) ? raw.evidence : [],
+        verified: Boolean(raw?.verified),
+        confidence: typeof raw?.confidence === "number" ? raw.confidence : 0,
+        abstained: Boolean(raw?.abstained),
+        model: raw?.model ?? null,
+        retrieval: raw?.retrieval && typeof raw.retrieval === "object" ? raw.retrieval : { mode: "unknown", reranked: false, candidate_count: 0, accepted_evidence: 0, acl_enforced: false },
+      };
+      setMessages(prev => [...prev, { role: "assistant", content: answer, response: safeResponse }]);
+    } catch (err) { setMessages(prev => [...prev, { role: "assistant", content: err instanceof Error ? err.message : "The request could not be completed." }]); }
+    finally { setBusy(false); }
+  };
+  return <div className="surface flex h-[calc(100vh-9.5rem)] min-h-[620px] flex-col overflow-hidden rounded-3xl fade-in"><div className="flex items-center justify-between border-b border-slate-800 px-5 py-4"><div><div className="text-sm font-semibold text-white">Ask Intelligence</div><div className="text-[11px] text-slate-500">Answers are generated from authorized evidence.</div></div><Badge tone="green">Evidence gated</Badge></div><div className="scrollbar-thin flex-1 overflow-y-auto p-5 sm:p-7">{!messages.length ? <div className="flex h-full items-center justify-center text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-400/20 bg-blue-500/10 text-blue-300">{icon("chat")}</div><h3 className="mt-5 text-2xl font-semibold text-white">What would you like to know?</h3><p className="mt-2 max-w-md text-sm leading-6 text-slate-500">Ask a precise question about your documents. Retrieval and authorization happen before generation.</p></div></div> : <div className="mx-auto max-w-3xl space-y-6">{messages.map((message, index) => <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={message.role === "user" ? "max-w-[78%] rounded-2xl bg-blue-600 px-4 py-3 text-sm text-white" : "w-full max-w-[90%] rounded-2xl border border-slate-800 bg-slate-900/55 p-5"}><p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-100">{message.content}</p>{message.response && <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-800 pt-4"><Badge tone={message.response.abstained ? "amber" : "green"}>{message.response.abstained ? "Abstained" : "Grounded answer"}</Badge><Badge tone="neutral">{message.response.retrieval.accepted_evidence} evidence items</Badge></div>}</div></div>)}{busy && <div className="text-sm text-slate-500">Retrieving evidence…</div>}<div ref={bottom} /></div>}</div><div className="border-t border-slate-800 bg-slate-950/40 p-4"><div className="mx-auto flex max-w-3xl items-end gap-3 rounded-2xl border border-slate-700 bg-slate-900/80 p-2"><textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }} rows={1} placeholder="Ask about your authorized documents…" className="min-h-11 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white outline-none placeholder:text-slate-600" /><button onClick={() => void send()} disabled={!input.trim() || busy} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{busy ? "Thinking…" : "Send"}</button></div></div></div>;
+}
+
+function Workflows() {
+  const [topic, setTopic] = useState(""); const [kind, setKind] = useState<"report" | "presentation">("report"); const [busy, setBusy] = useState(false); const [result, setResult] = useState<unknown>(null);
+  const run = async () => { if (!topic.trim() || busy) return; setBusy(true); try { setResult(kind === "report" ? (await api.report(topic)).result : (await api.presentation(topic)).result); } catch (err) { setResult({ error: err instanceof Error ? err.message : "Workflow failed" }); } finally { setBusy(false); } };
+  return <div className="space-y-6 fade-in"><div><div className="text-xs uppercase tracking-wider text-slate-500">Controlled AI workflows</div><h2 className="mt-1 text-2xl font-semibold text-white">Workflow studio</h2></div><section className="surface rounded-3xl p-6"><div className="flex gap-3"><button onClick={() => setKind("report")} className={`rounded-xl px-4 py-2 text-sm ${kind === "report" ? "bg-blue-600 text-white" : "bg-slate-900 text-slate-400"}`}>Executive report</button><button onClick={() => setKind("presentation")} className={`rounded-xl px-4 py-2 text-sm ${kind === "presentation" ? "bg-blue-600 text-white" : "bg-slate-900 text-slate-400"}`}>Presentation outline</button></div><textarea value={topic} onChange={e => setTopic(e.target.value)} rows={5} placeholder="Describe the topic to synthesize from authorized documents…" className="mt-5 w-full resize-none rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-white outline-none focus:border-blue-500" /><button onClick={() => void run()} disabled={!topic.trim() || busy} className="mt-3 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{busy ? "Generating…" : "Run workflow"}</button></section>{result !== null && <section className="surface rounded-3xl p-6"><div className="text-xs uppercase tracking-wider text-slate-500">Workflow output</div><pre className="scrollbar-thin mt-4 max-h-[520px] overflow-auto whitespace-pre-wrap rounded-2xl bg-slate-950/70 p-5 text-xs leading-6 text-slate-300">{typeof result === "string" ? result : JSON.stringify(result, null, 2)}</pre></section>}</div>;
+}
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('library');
-
-  return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 font-sans selection:bg-indigo-500/30">
-      <header className="border-b border-white/10 bg-black/40 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">DocIntel<span className="text-indigo-400">Agent</span></h1>
-          </div>
-          <nav className="flex gap-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === tab ? 'bg-indigo-500/20 text-indigo-300' : 'text-neutral-400 hover:text-neutral-200 hover:bg-white/5'}`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </header>
-
-      <main className="container mx-auto px-6 py-8">
-        {activeTab === 'library' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 fade-in">
-            <div className="lg:col-span-2 space-y-6"><DocumentLibrary /></div>
-            <div className="space-y-6"><UploadPanel /></div>
-          </div>
-        )}
-        {activeTab === 'chat' && <div className="max-w-4xl mx-auto h-[calc(100vh-10rem)] fade-in"><ChatInterface /></div>}
-        {activeTab === 'agents' && <div className="max-w-5xl mx-auto fade-in"><AgentActions /></div>}
-      </main>
-    </div>
-  );
+  const [hydrated, setHydrated] = useState(false); const [session, setSession] = useState<string | null>(null); const [tenant, setTenant] = useState(""); const [active, setActive] = useState<Tab>("overview"); const [docs, setDocs] = useState<Document[]>([]); const [health, setHealth] = useState(false);
+  const role = useMemo(() => { if (!session) return undefined; try { const payload = session.split(".")[1]; if (!payload) return undefined; return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))).role as string; } catch { return undefined; } }, [session]);
+  const refresh = async () => { try { setDocs(await api.documents()); } catch { setDocs([]); } };
+  const checkHealth = async () => { try { await api.health(); setHealth(true); } catch { setHealth(false); } };
+  useEffect(() => { setSession(getToken()); setTenant(getTenant()); setHydrated(true); }, []);
+  useEffect(() => { if (!session) return; void refresh(); void checkHealth(); const timer = window.setInterval(() => void checkHealth(), 30000); return () => window.clearInterval(timer); }, [session]);
+  const doLogin = async (t: string, email: string, password: string) => { const s = await login(t, email, password); setSession(s.access_token); setTenant(t); };
+  if (!hydrated) return <div className="min-h-screen bg-slate-950" aria-hidden="true" />;
+  if (!session) return <LoginScreen onLogin={doLogin} />;
+  return <div className="min-h-screen lg:flex"><AppShell onLogout={() => { clearSession(); setSession(null); }} active={active} setActive={setActive} /><div className="min-w-0 flex-1"><Topbar tenant={tenant} role={role} health={health} active={active} setActive={setActive} /><main className="mx-auto max-w-[1500px] p-5 lg:p-8">{active === "overview" && <Overview docs={docs} onNavigate={setActive} />}{active === "documents" && <Documents docs={docs} onRefresh={refresh} canUpload={role === "admin" || role === "manager"} />}{active === "chat" && <Chat />}{active === "workflows" && <Workflows />}</main></div></div>;
 }

@@ -1,42 +1,48 @@
 # Enterprise Intelligence Runtime
 
-> A production-oriented document intelligence platform for heterogeneous enterprise knowledge.
+> A secure, evidence-first document intelligence workspace for enterprise knowledge.
 
-This repository is being evolved from the original MVP into a measurable AI engineering system: document ingestion, structured metadata, retrieval, agent execution, security boundaries, evaluation, observability and reliable asynchronous workflows.
+Enterprise Intelligence combines asynchronous document processing, hybrid retrieval, cross-encoder reranking, access-controlled evidence, grounded RAG and structured AI workflows in one product.
 
-## Current architecture
+## Product flow
 
 ```text
-Next.js UI
-    |
-FastAPI API ---- PostgreSQL/SQLite metadata
-    |             |
-    +---- Redis / worker jobs
-    |
-    +---- Hybrid retrieval -> reranking -> evidence
-    |
-    +---- Agent runtime -> tools -> verification
-    |
-    +---- evaluation / audit / observability
+Upload → durable ingestion → parse/chunk → index
+                         ↓
+              hybrid retrieval + reranking
+                         ↓
+               tenant / document ACL
+                         ↓
+                  evidence gate
+                   ↙          ↘
+              enough             weak
+                ↓                  ↓
+             Gemini             abstain
+                ↓
+       answer + source evidence
 ```
 
-## Supported documents
+## What is implemented
 
-PDF, DOCX, PPTX and XLSX. The parser factory provides a format-specific extension point. The ingestion layer records a checksum, tenant, version and processing status before indexing.
+- PDF, DOCX, PPTX and XLSX ingestion with format-specific parsers.
+- Durable Celery/Redis ingestion checkpoints and idempotent upload handling.
+- PostgreSQL production metadata path with SQLite local fallback.
+- Chroma-backed dense retrieval, BM25 sparse retrieval and reciprocal-rank fusion.
+- Cross-encoder reranking with an explicit evidence admission threshold.
+- Evidence-grounded Gemini answers with explicit abstention when support is insufficient.
+- JWT authentication, tenant isolation, RBAC and document-level `read` ACLs.
+- Prompt-injection defenses that keep retrieved content explicitly marked as untrusted data.
+- Evidence graph, claim verification, contradiction detection and controlled workflow endpoints.
+- Prometheus/OpenTelemetry-compatible observability and deterministic evaluation gates.
+- Corporate-style Next.js workspace for authentication, documents, chat and AI workflows.
 
-## Engineering goals
+## Security posture
 
-- Hybrid dense + sparse retrieval with reranking
-- Evidence-first answers and explicit abstention
-- Tenant isolation, RBAC and document ACLs
-- Prompt-injection and tool-boundary defenses
-- Async, resumable ingestion and idempotent jobs
-- PostgreSQL + Redis production path with SQLite local fallback
-- Evaluation datasets for retrieval, generation, citation and security
-- OpenTelemetry-compatible tracing and structured logs
-- Cost/latency accounting and regression gates in CI
+Authorization is enforced before retrieval, not after generation. Admin and manager roles can read documents in their tenant; viewers require explicit document permissions. Cross-tenant tenant-header mismatches are rejected. Retrieved content is treated as data and is never intended to override system instructions. These controls follow least-privilege and trust-boundary guidance for RAG applications. citehttps://genai.owasp.org/llmrisk/llm01-prompt-injection/
 
-## Local development
+## Local run
+
+### Backend
 
 ```bash
 cd backend
@@ -47,31 +53,51 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-Set `GEMINI_API_KEY` in `backend/.env`. The application uses SQLite by default for local development. For production, set `DATABASE_URL` to PostgreSQL and `REDIS_URL` to Redis.
+For asynchronous ingestion:
 
-Frontend:
+```bash
+celery -A app.worker.celery_app.celery_app worker --loglevel=INFO --queues=document-ingestion --concurrency=2
+```
+
+Set `GEMINI_API_KEY` in `backend/.env`. For a production-style local stack, use `docker compose up -d postgres redis worker backend` and keep the API and worker on the same PostgreSQL/Redis/Chroma configuration.
+
+### Frontend
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
-## API smoke test
+Set `NEXT_PUBLIC_API_URL` to the FastAPI base URL. See `frontend/.env.example`.
 
-```bash
-curl http://localhost:8000/api/health
-curl http://localhost:8000/api/ready
+## Validation
+
+The repository contains automated security/RAG regression tests under `backend/tests` and a deterministic evaluation gate under `evals/`. CI runs Python compile checks, Ruff, pytest, deterministic evaluation and a production frontend build. No benchmark result should be published unless it is produced by a reproducible run.
+
+## Demo checklist
+
+1. Sign in with an authenticated tenant user.
+2. Upload a supported document and watch the ingestion status move to indexed.
+3. Ask an answerable question and inspect the source evidence.
+4. Ask an unsupported question and verify that the system abstains without calling the model.
+5. Test a viewer before and after an explicit document permission grant.
+6. Demonstrate that a different tenant cannot access the first tenant's documents.
+
+## Architecture
+
+```text
+Next.js workspace
+      |
+FastAPI API ───── PostgreSQL / SQLite
+      |
+      +──── Redis ─── Celery workers
+      |
+      +──── Chroma + BM25 ─── reranker ─── ACL evidence gate
+      |
+      +──── Gemini generation / controlled workflows
+      |
+      +──── audit / metrics / tracing / evaluation
 ```
 
-## Evaluation
-
-The `evals/` directory is intentionally part of the product. Add datasets with expected evidence, run retrieval/generation/security evaluations, and record latency, recall, citation correctness and cost. Do not publish invented benchmark numbers; results must come from reproducible runs.
-
-## Security model
-
-Retrieved documents are untrusted data, never instructions. Tenant context is propagated through API boundaries and vector metadata. Production deployments must enable authentication, replace the default secret, restrict CORS and configure PostgreSQL/Redis credentials through secrets.
-
-## Roadmap
-
-See `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/EVALUATION.md` for the implementation contract and benchmark plan.
+See `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/EVALUATION.md` for implementation details.

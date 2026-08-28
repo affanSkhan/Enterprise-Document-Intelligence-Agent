@@ -1,29 +1,124 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from swagger_ui_bundle import swagger_ui_path
+
+from app.api.auth_routes import router as auth_router
+from app.api.multimodal_routes import router as multimodal_router
+from app.api.platform_routes import router as platform_router
 from app.api.routes import router as api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
-from app.db.session import init_db
+from app.db.session import bootstrap_admin, init_db
+from app.observability.middleware import MetricsMiddleware
+from app.observability.tracing import configure_tracing
+from app.services.jobs import recover_pending_ingestion_jobs
 
 configure_logging()
+configure_tracing()
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Production-oriented enterprise document intelligence runtime with retrieval, agents, security and evaluation.",
-    version="1.0.0",
+    description="Production-oriented enterprise document intelligence runtime with retrieval, agents, security, evidence graphs, multimodal provenance and evaluation.",
+    version="1.4.0",
+    docs_url=None,
+    redoc_url=None,
 )
 
-origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+app.openapi_version = "3.0.3"
+
+
+def custom_openapi() -> dict:
+    """Generate an OpenAPI 3.0 schema compatible with the bundled Swagger UI."""
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    schema["openapi"] = "3.0.3"
+
+    for component in schema.get("components", {}).get("schemas", {}).values():
+        properties = component.get("properties", {}) if isinstance(component, dict) else {}
+        for prop in properties.values():
+            if not isinstance(prop, dict):
+                continue
+            if prop.get("contentMediaType") == "application/octet-stream":
+                prop.pop("contentMediaType", None)
+                prop["type"] = "string"
+                prop["format"] = "binary"
+            items = prop.get("items")
+            if isinstance(items, dict) and items.get("contentMediaType") == "application/octet-stream":
+                items.pop("contentMediaType", None)
+                items["type"] = "string"
+                items["format"] = "binary"
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+app.mount(
+    "/docs-assets",
+    StaticFiles(directory=str(swagger_ui_path)),
+    name="docs-assets",
+)
+
+origins = [origin.strip().rstrip("/") for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(MetricsMiddleware)
+app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
+app.include_router(multimodal_router, prefix=settings.API_V1_PREFIX)
+app.include_router(platform_router, prefix=settings.API_V1_PREFIX)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    """Return a controlled JSON error so API failures retain CORS headers."""
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 @app.on_event("startup")
 def startup():
     init_db()
+    bootstrap_admin()
+    try:
+        recover_pending_ingestion_jobs()
+    except Exception:
+        pass
 
 
 @app.get("/")
 async def root():
-    return {"service": settings.PROJECT_NAME, "version": "1.0.0", "status": "running"}
+    return {"service": settings.PROJECT_NAME, "version": "1.4.0", "status": "running"}
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_docs():
+    return get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_js_url="/docs-assets/swagger-ui-bundle.js",
+        swagger_css_url="/docs-assets/swagger-ui.css",
+        swagger_favicon_url="/docs-assets/favicon.png",
+    )
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)

@@ -4,7 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=Path(__file__).resolve().parents[2] / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     PROJECT_NAME: str = "Enterprise Intelligence Runtime"
     API_V1_PREFIX: str = "/api"
@@ -13,27 +17,41 @@ class Settings(BaseSettings):
     ENABLE_AUTH: bool = False
     SECRET_KEY: str = "change-me-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ADMIN_TENANT_ID: str = ""
+    ADMIN_TENANT_NAME: str = ""
+    ADMIN_EMAIL: str = ""
+    ADMIN_PASSWORD: str = ""
 
     GEMINI_API_KEY: str = ""
     PRIMARY_LLM_MODEL: str = "gemini-2.5-flash"
-    FAST_LLM_MODEL: str = "gemini-2.5-flash-lite"
+    FAST_LLM_MODEL: str = "gemini-3.5-flash-lite"
 
     DATABASE_URL: str = "sqlite:///./enterprise_intelligence.db"
     POSTGRES_URL: str = "postgresql+psycopg://enterprise:enterprise@postgres:5432/enterprise"
     REDIS_URL: str = "redis://redis:6379/0"
+    VECTOR_BACKEND: str = "chroma"
     CHROMA_DB_DIR: str = "./chroma_db"
+    VECTOR_COLLECTION_NAME: str = "documents_v2"
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_MB: int = 50
     JOB_TTL_SECONDS: int = 86400
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
-    RERANKER_MODEL: str = "BAAI/bge-reranker-base"
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # The cross-encoder pulls PyTorch/sentence-transformers into the request
+    # process and can exceed Render's free-instance memory once the model is
+    # loaded. Keep it opt-in; the default reranker is lightweight and pure
+    # Python, while the cross-encoder remains available on larger instances.
+    ENABLE_CROSS_ENCODER_RERANKER: bool = False
+    RERANKER_MIN_SCORE: float = 0.02
     RETRIEVAL_TOP_K: int = 12
     RERANK_TOP_K: int = 6
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 120
 
-    CORS_ORIGINS: str = "http://localhost:3000"
+    # Keep the production UI origin in the application defaults so a Render
+    # deployment remains CORS-safe even if the environment variable is omitted.
+    CORS_ORIGINS: str = "https://enterprise-doc-intelligence-ui.onrender.com,http://localhost:3000"
     OTEL_SERVICE_NAME: str = "enterprise-intelligence-runtime"
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
 
@@ -41,6 +59,10 @@ class Settings(BaseSettings):
         path = Path(self.UPLOAD_DIR)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def use_pgvector(self) -> bool:
+        return self.VECTOR_BACKEND.lower() == "pgvector"
 
 
 @lru_cache

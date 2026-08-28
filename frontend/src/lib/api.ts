@@ -1,4 +1,5 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const PRODUCTION_API = "https://enterprise-doc-intelligence-api-final2.onrender.com";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? PRODUCTION_API : "http://localhost:8000");
 export const TENANT_KEY = "ei.tenant";
 export const TOKEN_KEY = "ei.token";
 
@@ -18,33 +19,66 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store" });
-  const body = await res.text();
-  let data: unknown = null;
-  try { data = body ? JSON.parse(body) : null; } catch { data = body; }
-  if (!res.ok) {
-    const detail = typeof data === "object" && data && "detail" in data ? String((data as {detail?: unknown}).detail) : `Request failed (${res.status})`;
-    throw new Error(detail);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store", signal: controller.signal });
+    const body = await res.text();
+    let data: unknown = null;
+    try { data = body ? JSON.parse(body) : null; } catch { data = body; }
+    if (!res.ok) {
+      const detail = typeof data === "object" && data && "detail" in data ? String((data as {detail?: unknown}).detail) : `Request failed (${res.status})`;
+      throw new Error(detail);
+    }
+    return data as T;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Request timed out. The API may be waking up; please try again in a few seconds.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data as T;
 }
 
 export async function login(tenant: string, email: string, password: string) {
   const form = new URLSearchParams();
   form.set("username", email); form.set("password", password); form.set("tenant_id", tenant);
-  const res = await fetch(`${API_BASE}/api/auth/token`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form, cache: "no-store" });
-  const data = await res.json() as Session & { detail?: string };
-  if (!res.ok) throw new Error(data.detail || "Invalid credentials");
-  saveSession(tenant, data); return data;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: form,
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let data: Partial<Session> & { detail?: string } = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { data = { detail: text }; }
+    if (!res.ok) throw new Error(data.detail || `Sign in failed (${res.status})`);
+    if (!data.access_token) throw new Error("Sign in succeeded but no access token was returned.");
+    const session = data as Session;
+    saveSession(tenant, session); return session;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Sign in timed out. The API may be waking up; please try again in a few seconds.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export const api = {
-  health: () => request<{status:string}>('/api/health'),
-  documents: () => request<Document[]>('/api/documents'),
-  upload: async (file: File) => { const form = new FormData(); form.append('file', file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>('/api/documents/upload', {method:'POST', body:form}); },
+  health: () => request<{status:string}>("/api/health"),
+  documents: () => request<Document[]>("/api/documents"),
+  upload: async (file: File) => { const form = new FormData(); form.append("file", file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>("/api/documents/upload", {method:"POST", body:form}); },
   job: (id: string) => request<Job>(`/api/jobs/${id}`),
-  search: (query: string, top_k = 5) => request<{results: Evidence[]}>('/api/search', {method:'POST', body:JSON.stringify({query,top_k,mode:'hybrid',rerank:true})}),
-  chat: (query: string, top_k = 6) => request<ChatResponse>('/api/chat', {method:'POST', body:JSON.stringify({query,top_k})}),
-  report: (topic: string) => request<{result:string}>('/api/agents/report', {method:'POST', body:JSON.stringify({topic})}),
-  presentation: (topic: string) => request<{result:Array<{title:string;bullet_points:string[]}>|object}>('/api/agents/presentation', {method:'POST', body:JSON.stringify({topic})}),
+  search: (query: string, top_k = 5) => request<{results: Evidence[]}>("/api/search", {method:"POST", body:JSON.stringify({query,top_k,mode:"hybrid",rerank:true})}),
+  chat: (query: string, top_k = 6) => request<ChatResponse>("/api/chat", {method:"POST", body:JSON.stringify({query,top_k})}),
+  report: (topic: string) => request<{result:string}>("/api/agents/report", {method:"POST", body:JSON.stringify({topic})}),
+  presentation: (topic: string) => request<{result:Array<{title:string;bullet_points:string[]}>|object}>("/api/agents/presentation", {method:"POST", body:JSON.stringify({topic})}),
 };

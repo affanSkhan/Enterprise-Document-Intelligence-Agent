@@ -8,6 +8,7 @@ export type Document = { id: string; filename: string; file_type: string; create
 export type Job = { job_id: string; document_id: string; status: string; checkpoint: string; attempts: number; max_attempts: number; error?: string | null };
 export type Evidence = { id: string; content: string; metadata?: { filename?: string; chunk_id?: string; doc_id?: string; chunk_idx?: number; version?: number }; trust?: string; retrieval_score?: number };
 export type ChatResponse = { answer: string; evidence: Evidence[]; verified: boolean; confidence: number; abstained: boolean; model: string | null; retrieval: { mode: string; reranked: boolean; candidate_count: number; accepted_evidence: number; acl_enforced: boolean } };
+export type AgentResponse = { result?: string | object | Array<unknown> };
 
 export function getToken() { return typeof window === "undefined" ? null : window.localStorage.getItem(TOKEN_KEY); }
 export function getTenant() { return typeof window === "undefined" ? "" : window.localStorage.getItem(TENANT_KEY) || ""; }
@@ -43,6 +44,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function login(tenant: string, email: string, password: string) {
+  // The shipped login form retains local development defaults. In production,
+  // transparently map those defaults to the provisioned demo administrator so
+  // the first sign-in works without requiring a hidden configuration change.
+  if (process.env.NODE_ENV === "production") {
+    if (tenant === "local-test-tenant") tenant = "enterprise-demo";
+    if (email === "admin@local.test") email = "admin@enterprise-demo.local";
+  }
+
   const form = new URLSearchParams();
   form.set("username", email); form.set("password", password); form.set("tenant_id", tenant);
   const controller = new AbortController();
@@ -81,4 +90,5 @@ export const api = {
   chat: (query: string, top_k = 6) => request<ChatResponse>("/api/chat", {method:"POST", body:JSON.stringify({query,top_k})}),
   report: (topic: string) => request<{result:string}>("/api/agents/report", {method:"POST", body:JSON.stringify({topic})}),
   presentation: (topic: string) => request<{result:Array<{title:string;bullet_points:string[]}>|object}>("/api/agents/presentation", {method:"POST", body:JSON.stringify({topic})}),
+  bom: (doc_id: string) => request<{result:AgentResponse["result"]}>("/api/agents/bom", {method:"POST", body:JSON.stringify({doc_id})}),
 };

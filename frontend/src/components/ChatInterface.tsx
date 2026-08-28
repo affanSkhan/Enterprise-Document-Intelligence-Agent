@@ -1,9 +1,18 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
 import { api, type Evidence } from "@/lib/api";
 
 type Message = { role: "user" | "assistant"; content: string; citations?: Evidence[] };
+
+function safeText(value: unknown, fallback = "No answer returned."): string {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return fallback;
+  }
+}
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -21,9 +30,12 @@ export default function ChatInterface() {
     setLoading(true);
     try {
       const data = await api.chat(question);
-      setMessages((prev) => [...prev, { role: "assistant", content: data.answer || "No answer returned.", citations: data.evidence }]);
+      const answer = safeText(data?.answer);
+      const citations = Array.isArray(data?.evidence) ? data.evidence : [];
+      setMessages((prev) => [...prev, { role: "assistant", content: answer, citations }]);
     } catch (error) {
-      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${error instanceof Error ? error.message : "Could not reach the server."}` }]);
+      const message = error instanceof Error ? error.message : "Could not reach the server.";
+      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${message}` }]);
     } finally {
       setLoading(false);
     }
@@ -36,7 +48,7 @@ export default function ChatInterface() {
         {messages.length === 0 ? <div className="text-center text-neutral-500 h-full flex items-center justify-center">Ask any question about your uploaded documents.</div> : messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[80%] rounded-2xl p-4 ${msg.role === "user" ? "bg-indigo-600 text-white" : "bg-white/5 border border-white/10 text-neutral-200"}`}>
-              {msg.role === "user" ? <p className="whitespace-pre-wrap">{msg.content}</p> : <div className="prose prose-invert max-w-none prose-sm sm:prose-base"><ReactMarkdown>{msg.content}</ReactMarkdown></div>}
+              <p className="whitespace-pre-wrap break-words">{msg.content}</p>
               {msg.citations && msg.citations.length > 0 && <div className="mt-3 pt-3 border-t border-white/10"><p className="text-xs text-neutral-400 mb-2 uppercase">Sources</p><div className="flex flex-wrap gap-2">{msg.citations.map((cit, idx) => <span key={idx} className="text-xs px-2 py-1 bg-black/30 rounded text-neutral-300 border border-white/5">{cit.metadata?.filename || "Document"}</span>)}</div></div>}
             </div>
           </div>

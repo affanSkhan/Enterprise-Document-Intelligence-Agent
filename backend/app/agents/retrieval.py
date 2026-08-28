@@ -43,6 +43,23 @@ def _abstention_response(candidate_count: int) -> dict[str, Any]:
     }
 
 
+def _response_text(content: Any) -> str:
+    """Normalize Gemini/LangChain message content to plain markdown text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text is not None:
+                    parts.append(str(text))
+        return "\n".join(parts).strip()
+    return str(content)
+
+
 def chat_with_docs(
     query: str,
     top_k: int = 6,
@@ -62,9 +79,6 @@ def chat_with_docs(
         role=role,
     )
 
-    # Retrieval returning documents is not sufficient evidence by itself.
-    # Only candidates whose reranker score crosses the configured threshold
-    # are allowed into the generation context.
     if not results or results[0]["score"] < settings.RERANKER_MIN_SCORE:
         return _abstention_response(len(results))
 
@@ -93,6 +107,11 @@ def chat_with_docs(
     finally:
         LLM_LATENCY.labels(model).observe(time.perf_counter() - started)
 
+    answer = _response_text(response.content)
+    if not answer:
+        LLM_REQUESTS.labels(model, "error").inc()
+        raise RuntimeError("The language model returned an empty answer")
+
     evidence = [
         {
             "id": f"evidence-{i + 1}",
@@ -105,7 +124,7 @@ def chat_with_docs(
     ]
     top_score = float(accepted_results[0]["score"])
     return {
-        "answer": response.content,
+        "answer": answer,
         "evidence": evidence,
         "verified": True,
         "confidence": _score_to_confidence(top_score),

@@ -17,13 +17,25 @@ def _metadata(row: DocumentChunk) -> dict[str, Any]:
 def dense_search(db: Session, query: str, top_k: int, tenant_id: str, allowed_ids: list[str] | None) -> list[tuple[LCDocument, float]]:
     if allowed_ids is not None and not allowed_ids:
         return []
+
     vector = get_embeddings().embed_query(query)
-    stmt = select(DocumentChunk).where(DocumentChunk.tenant_id == tenant_id, DocumentChunk.embedding.is_not(None))
+    distance_expr = DocumentChunk.embedding.cosine_distance(vector).label("distance")
+    stmt = select(DocumentChunk, distance_expr).where(
+        DocumentChunk.tenant_id == tenant_id,
+        DocumentChunk.embedding.is_not(None),
+    )
     if allowed_ids is not None:
         stmt = stmt.where(DocumentChunk.doc_id.in_(allowed_ids))
-    stmt = stmt.order_by(DocumentChunk.embedding.cosine_distance(vector)).limit(top_k)
-    rows = db.execute(stmt).scalars().all()
-    return [(LCDocument(page_content=row.content, metadata=_metadata(row)), float(row.embedding.cosine_distance(vector))) for row in rows]
+    stmt = stmt.order_by(distance_expr).limit(top_k)
+
+    # The distance is a SQL expression, not a Python method on the returned
+    # pgvector list. Selecting it explicitly avoids attempting to call
+    # cosine_distance() on the deserialized embedding value.
+    rows = db.execute(stmt).all()
+    return [
+        (LCDocument(page_content=row.content, metadata=_metadata(row)), float(distance))
+        for row, distance in rows
+    ]
 
 
 def tenant_documents(db: Session, tenant_id: str, allowed_ids: list[str] | None) -> list[LCDocument]:

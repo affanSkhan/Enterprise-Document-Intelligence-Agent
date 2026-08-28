@@ -60,7 +60,7 @@ def _dense_search(query: str, top_k: int, tenant_id: str, allowed_ids: list[str]
         return []
     filter_: dict[str, Any] = {"tenant_id": tenant_id}
     if allowed_ids is not None:
-        filter_ = {"$and": [{"tenant_id": tenant_id}, {"doc_id": {"$in": allowed_ids}]}}
+        filter_ = {"$and": [{"tenant_id": tenant_id}, {"doc_id": {"$in": allowed_ids}]}
     return vectorstore.similarity_search_with_score(query, k=top_k, filter=filter_)
 
 

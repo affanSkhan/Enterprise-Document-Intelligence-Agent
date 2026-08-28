@@ -15,6 +15,7 @@ from app.core.logging import configure_logging
 from app.db.session import bootstrap_admin, init_db
 from app.observability.middleware import MetricsMiddleware
 from app.observability.tracing import configure_tracing
+from app.services.jobs import recover_pending_ingestion_jobs
 
 configure_logging()
 configure_tracing()
@@ -27,13 +28,11 @@ app = FastAPI(
     redoc_url=None,
 )
 
-# swagger-ui-bundle 1.1.0 ships Swagger UI 4.15.5. Keep the generated schema
-# at OpenAPI 3.0.3 and normalize binary upload fields to the OAS 3.0
-# `format: binary` representation so Swagger UI renders a native file picker.
 app.openapi_version = "3.0.3"
 
 
-def custom_openapi():
+def custom_openapi() -> dict:
+    """Generate an OpenAPI 3.0 schema compatible with the bundled Swagger UI."""
     if app.openapi_schema:
         return app.openapi_schema
 
@@ -45,8 +44,6 @@ def custom_openapi():
     )
     schema["openapi"] = "3.0.3"
 
-    # Newer FastAPI/OpenAPI 3.1 schemas may describe uploads using
-    # contentMediaType. Swagger UI 4.x expects the OpenAPI 3.0 binary form.
     for component in schema.get("components", {}).get("schemas", {}).values():
         properties = component.get("properties", {}) if isinstance(component, dict) else {}
         for prop in properties.values():
@@ -68,17 +65,22 @@ def custom_openapi():
 
 app.openapi = custom_openapi
 
-# FastAPI normally loads Swagger UI assets from a public CDN. Serve the bundled
-# package assets locally so /docs works without external DNS/CDN access.
 app.mount(
     "/docs-assets",
     StaticFiles(directory=str(swagger_ui_path)),
     name="docs-assets",
 )
 
-origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True,
-                   allow_methods=["*"], allow_headers=["*"])
+# CORS is intentionally driven by configuration, with the production UI
+# origin also present in the application's default configuration.
+origins = [origin.strip().rstrip("/") for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(MetricsMiddleware)
 app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
@@ -86,41 +88,18 @@ app.include_router(multimodal_router, prefix=settings.API_V1_PREFIX)
 app.include_router(platform_router, prefix=settings.API_V1_PREFIX)
 
 
-def custom_openapi() -> dict:
-    """Generate a Swagger UI 4-compatible OpenAPI document.
-
-    Recent FastAPI/Pydantic versions describe uploaded files with the JSON
-    Schema ``contentMediaType`` keyword.  Swagger UI 4 expects OpenAPI 3.0's
-    ``format: binary`` instead, otherwise it shows a text input rather than a
-    file chooser.
-    """
-    if app.openapi_schema:
-        return app.openapi_schema
-
-    schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-    schema["openapi"] = app.openapi_version
-    for component in schema.get("components", {}).get("schemas", {}).values():
-        for property_schema in component.get("properties", {}).values():
-            if property_schema.get("contentMediaType") == "application/octet-stream":
-                property_schema.pop("contentMediaType", None)
-                property_schema["format"] = "binary"
-
-    app.openapi_schema = schema
-    return app.openapi_schema
-
-
-app.openapi = custom_openapi
-
-
 @app.on_event("startup")
 def startup():
     init_db()
     bootstrap_admin()
+    # A Render restart can interrupt the colocated Celery worker. Requeue any
+    # durable ingestion jobs so uploads never remain stranded after a restart.
+    try:
+        recover_pending_ingestion_jobs()
+    except Exception:
+        # The API must still become healthy if Redis is temporarily unavailable;
+        # the durable jobs can be recovered on the next successful startup.
+        pass
 
 
 @app.get("/")

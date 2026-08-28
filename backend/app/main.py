@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from swagger_ui_bundle import swagger_ui_path
@@ -71,8 +72,6 @@ app.mount(
     name="docs-assets",
 )
 
-# CORS is intentionally driven by configuration, with the production UI
-# origin also present in the application's default configuration.
 origins = [origin.strip().rstrip("/") for origin in settings.CORS_ORIGINS.split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
@@ -88,17 +87,19 @@ app.include_router(multimodal_router, prefix=settings.API_V1_PREFIX)
 app.include_router(platform_router, prefix=settings.API_V1_PREFIX)
 
 
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    """Return a controlled JSON error so API failures retain CORS headers."""
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
 @app.on_event("startup")
 def startup():
     init_db()
     bootstrap_admin()
-    # A Render restart can interrupt the colocated Celery worker. Requeue any
-    # durable ingestion jobs so uploads never remain stranded after a restart.
     try:
         recover_pending_ingestion_jobs()
     except Exception:
-        # The API must still become healthy if Redis is temporarily unavailable;
-        # the durable jobs can be recovered on the next successful startup.
         pass
 
 

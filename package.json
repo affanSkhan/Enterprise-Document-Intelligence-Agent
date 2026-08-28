@@ -1,0 +1,8 @@
+{
+  "name": "enterprise-document-intelligence-render-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "preview": "cd frontend && npm start"
+  }
+}

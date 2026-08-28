@@ -44,14 +44,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export async function login(tenant: string, email: string, password: string) {
-  // The shipped login form retains local development defaults. In production,
-  // transparently map those defaults to the provisioned demo administrator so
-  // the first sign-in works without requiring a hidden configuration change.
-  if (process.env.NODE_ENV === "production") {
-    if (tenant === "local-test-tenant") tenant = "enterprise-demo";
-    if (email === "admin@local.test") email = "admin@enterprise-demo.local";
-  }
-
+  // Keep the credentials entered in the UI intact. Production must not silently
+  // rewrite tenant/email values because the API authenticates against the same
+  // tenant and user that the operator selected.
   const form = new URLSearchParams();
   form.set("username", email); form.set("password", password); form.set("tenant_id", tenant);
   const controller = new AbortController();

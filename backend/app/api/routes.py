@@ -113,7 +113,23 @@ async def documents(tenant_id: str = Depends(get_tenant_id), current: CurrentUse
     query = db.query(Document).filter(Document.tenant_id == tenant_id)
     if current.role not in {"admin", "manager"}:
         query = query.join(DocumentPermission).filter(DocumentPermission.user_id == current.id, DocumentPermission.permission == "read")
-    return query.order_by(Document.created_at.desc()).all()
+    documents = query.order_by(Document.created_at.desc()).all()
+    # Never serialize Document ORM objects directly: file_content is a LargeBinary
+    # column and was causing FastAPI's JSON encoder to attempt UTF-8 decoding of
+    # uploaded PDF/DOCX bytes. Return only metadata needed by the UI instead.
+    return [
+        {
+            "id": document.id,
+            "filename": document.filename,
+            "file_type": document.file_type,
+            "status": document.status,
+            "current_version": document.current_version,
+            "error_message": document.error_message,
+            "created_at": document.created_at,
+            "updated_at": document.updated_at,
+        }
+        for document in documents
+    ]
 
 
 @router.post("/documents/{doc_id}/permissions")

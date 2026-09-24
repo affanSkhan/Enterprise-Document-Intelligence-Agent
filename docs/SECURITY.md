@@ -24,3 +24,13 @@
 ## Security tests
 
 The security suite should include benign text, instruction-like document text, cross-tenant fixtures and unauthorized role/tool combinations. Security regressions should fail CI.
+
+## MongoDB persistence security
+
+- MongoDB is not an authorization mechanism.
+- Conversation and agent-run reads/writes are always scoped by `tenant_id` and `user_id` from the application security context.
+- API consumers cannot submit arbitrary MongoDB filters or collection names.
+- Variable AI payloads are stored through a repository abstraction rather than direct API-to-database access.
+- MongoDB connection credentials belong only in deployment secrets/environment variables.
+- Persistence failures are logged without leaking credentials or full sensitive prompts.
+- Production authentication must derive tenant/user identity from verified credentials rather than trusting the development headers.

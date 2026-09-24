@@ -625,3 +625,41 @@ The goal is not simply to make an LLM answer questions about documents. The goal
 ## License
 
 See the repository license and Git history for project provenance.
+
+## Polyglot persistence
+
+The runtime intentionally uses more than one persistence technology because the data models have different characteristics:
+
+| Store | Responsibility |
+|---|---|
+| PostgreSQL / SQLite | relational system of record: users, tenants, permissions, document metadata/versions and jobs |
+| MongoDB | conversations, messages, agent runs, flexible execution steps, tool traces and variable AI/model metadata |
+| ChromaDB | embeddings and vector retrieval |
+| Redis / Celery | asynchronous jobs and cache |
+
+MongoDB is an additional document-oriented store; it does not replace PostgreSQL, SQLite or ChromaDB.
+
+### Conversation and execution persistence
+
+Chat requests can create or continue a conversation using `conversation_id`. User and assistant messages are persisted with tenant/user scope. Agent executions receive stable `run_id` values and store variable nested steps such as retrieval and tool calls, plus model, latency, citations, status and token-usage fields when available.
+
+MongoDB persistence is deliberately non-critical to answer generation. If MongoDB is unavailable, the main document-intelligence request can still complete; persistence failures are logged. Read-only history endpoints report `503` when the history store is unavailable.
+
+See [`docs/MONGODB.md`](docs/MONGODB.md) for the schema, indexes, security boundary, local Docker setup and production configuration.
+
+### Environment variables
+
+```text
+MONGODB_URL=
+MONGODB_DATABASE=enterprise_intelligence
+MONGODB_APP_NAME=enterprise-intelligence-runtime
+MONGODB_CONNECT_TIMEOUT_MS=3000
+MONGODB_SERVER_SELECTION_TIMEOUT_MS=3000
+MONGODB_SOCKET_TIMEOUT_MS=5000
+MONGODB_MAX_POOL_SIZE=20
+MONGODB_MIN_POOL_SIZE=0
+MONGODB_RETRY_READS=true
+MONGODB_RETRY_WRITES=true
+```
+
+Production deployments should use MongoDB Atlas or another managed replica-set/sharded deployment. Never commit credentials.

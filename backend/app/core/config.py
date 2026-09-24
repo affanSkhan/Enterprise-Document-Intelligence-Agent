@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +26,17 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     MAX_UPLOAD_MB: int = 50
     JOB_TTL_SECONDS: int = 86400
+
+    MONGODB_URL: str = ""
+    MONGODB_DATABASE: str = "enterprise_intelligence"
+    MONGODB_APP_NAME: str = "enterprise-intelligence-runtime"
+    MONGODB_CONNECT_TIMEOUT_MS: int = 3000
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 3000
+    MONGODB_SOCKET_TIMEOUT_MS: int = 5000
+    MONGODB_MAX_POOL_SIZE: int = 20
+    MONGODB_MIN_POOL_SIZE: int = 0
+    MONGODB_RETRY_READS: bool = True
+    MONGODB_RETRY_WRITES: bool = True
 
     EMBEDDING_MODEL: str = "models/gemini-embedding-2"
     RERANKER_MODEL: str = "BAAI/bge-reranker-base"

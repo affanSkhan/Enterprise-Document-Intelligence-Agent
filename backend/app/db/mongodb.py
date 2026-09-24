@@ -6,8 +6,6 @@ data. Relational entities and vector retrieval remain in their existing stores.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any
-
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -18,10 +16,10 @@ from app.core.logging import log
 
 
 class MongoDB:
-    def __init__(self, uri: str, database_name: str) -> None:
+    def __init__(self, uri: str, database_name: str, client: MongoClient | None = None) -> None:
         self.uri = uri
         self.database_name = database_name
-        self.client = MongoClient(
+        self.client = client or MongoClient(
             uri,
             appname=settings.MONGODB_APP_NAME,
             connectTimeoutMS=settings.MONGODB_CONNECT_TIMEOUT_MS,

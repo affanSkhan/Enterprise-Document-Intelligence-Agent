@@ -103,7 +103,7 @@ class MongoPersistence:
             }
             if conversations.count_documents(scope, limit=1) == 0:
                 return None
-            messages.update_one(
+            result = messages.update_one(
                 {"message_id": mid, **scope},
                 {
                     "$setOnInsert": {
@@ -121,10 +121,10 @@ class MongoPersistence:
                 },
                 upsert=True,
             )
-            conversations.update_one(
-                scope,
-                {"$inc": {"message_count": 1}, "$set": {"updated_at": now}},
-            )
+            conversation_update: dict[str, Any] = {"$set": {"updated_at": now}}
+            if result.upserted_id is not None:
+                conversation_update["$inc"] = {"message_count": 1}
+            conversations.update_one(scope, conversation_update)
             return mid
 
         return self._run(op)

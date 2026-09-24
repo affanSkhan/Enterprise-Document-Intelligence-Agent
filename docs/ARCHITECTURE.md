@@ -33,3 +33,38 @@ Long-running work belongs in a queue. Every job needs a stable ID, status transi
 - Keep SQLite as a zero-friction local fallback while supporting PostgreSQL through `DATABASE_URL`.
 - Keep Chroma behind `get_vectorstore()` so the retrieval layer can later switch to a managed/vector-native backend without changing API contracts.
 - Prefer evidence objects over raw strings so citation verification and UI provenance remain possible.
+
+## Polyglot persistence boundary
+
+```text
+                         Enterprise Intelligence Runtime
+                                      |
+          +---------------------------+---------------------------+
+          |                           |                           |
+          v                           v                           v
+   PostgreSQL / SQLite          MongoDB                     ChromaDB
+   relational system            AI documents                vector index
+   of record                    + execution history         + retrieval
+          |                           |
+          |                           +-- conversations
+          |                           +-- messages
+          |                           +-- agent runs
+          |                           +-- nested steps
+          |                           +-- tool traces
+          |                           +-- model/latency/eval data
+          |
+          +-- users / tenants / roles
+          +-- document metadata / versions
+          +-- jobs / relational entities
+
+                         Redis / Celery
+                       async jobs + cache
+```
+
+MongoDB is deliberately not used for users, tenant authorization, document metadata, or vectors. The existing PostgreSQL/SQLite and ChromaDB boundaries remain intact.
+
+Conversation messages are stored as separate documents instead of an unbounded array inside one conversation record. The conversation document stores metadata and counters; this keeps document growth bounded while preserving a document-oriented persistence model.
+
+All MongoDB repository operations are scoped by the tenant and user context established by the existing application security layer. MongoDB itself is never treated as an authorization mechanism.
+
+See `docs/MONGODB.md` for the collection model, indexes, reliability behavior, environment variables, and deployment guidance.

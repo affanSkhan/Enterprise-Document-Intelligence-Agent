@@ -628,28 +628,40 @@ See the repository license and Git history for project provenance.
 
 ## Polyglot persistence
 
-The runtime intentionally uses more than one persistence technology because the data models have different characteristics:
+The platform deliberately uses **polyglot persistence** because different workloads have different data characteristics.
 
-| Store | Responsibility |
-|---|---|
-| PostgreSQL / SQLite | relational system of record: users, tenants, permissions, document metadata/versions and jobs |
-| MongoDB | conversations, messages, agent runs, flexible execution steps, tool traces and variable AI/model metadata |
-| ChromaDB | embeddings and vector retrieval |
-| Redis / Celery | asynchronous jobs and cache |
+| Store | Responsibility | Why it fits |
+|---|---|---|
+| **PostgreSQL / SQLite** | Relational system of record: users, tenants, permissions, document metadata/versions and jobs | Strong relationships, constraints and transactional consistency |
+| **MongoDB** | Conversations, messages, agent runs, nested execution steps, tool traces and variable AI/model metadata | Flexible schema for rapidly evolving AI execution data |
+| **ChromaDB** | Embeddings and vector retrieval | Purpose-built vector similarity search |
+| **Redis / Celery** | Asynchronous jobs and cache | Fast transient state and background execution |
 
-MongoDB is an additional document-oriented store; it does not replace PostgreSQL, SQLite or ChromaDB.
+MongoDB is an **additional** persistence layer; it does not replace the relational database or vector store.
 
-### Conversation and execution persistence
+### AI history and agent-run persistence
 
-Chat requests can create or continue a conversation using `conversation_id`. User and assistant messages are persisted with tenant/user scope. Agent executions receive stable `run_id` values and store variable nested steps such as retrieval and tool calls, plus model, latency, citations, status and token-usage fields when available.
+Chat requests can create or continue a conversation using `conversation_id`. Messages are persisted with tenant/user scope, and agent executions receive stable `run_id` values.
 
-MongoDB persistence is deliberately non-critical to answer generation. If MongoDB is unavailable, the main document-intelligence request can still complete; persistence failures are logged. Read-only history endpoints report `503` when the history store is unavailable.
+An agent run can contain nested steps such as:
+
+- retrieval operations
+- model calls
+- tool calls
+- agent actions
+- latency and status
+- citations/evidence metadata
+- token-usage metadata when available
+
+This gives the system a persistent execution history without forcing highly variable AI traces into rigid relational tables.
+
+MongoDB persistence is intentionally **non-critical to answer generation**. If MongoDB is unavailable, the core document-intelligence request can still complete and the persistence failure is logged. Read-only history endpoints return `503` when the history store is unavailable.
 
 See [`docs/MONGODB.md`](docs/MONGODB.md) for the schema, indexes, security boundary, local Docker setup and production configuration.
 
-### Environment variables
+### MongoDB configuration
 
-```text
+```env
 MONGODB_URL=
 MONGODB_DATABASE=enterprise_intelligence
 MONGODB_APP_NAME=enterprise-intelligence-runtime
@@ -662,4 +674,83 @@ MONGODB_RETRY_READS=true
 MONGODB_RETRY_WRITES=true
 ```
 
-Production deployments should use MongoDB Atlas or another managed replica-set/sharded deployment. Never commit credentials.
+For production, use MongoDB Atlas or another managed replica-set/sharded deployment. Never commit credentials.
+
+---
+
+## API surface
+
+The backend exposes a FastAPI API for the main intelligence workflows, including:
+
+| Area | Examples |
+|---|---|
+| Health/readiness | `/api/health`, `/api/ready`, MongoDB readiness |
+| Documents | Upload, listing, metadata and processing workflows |
+| Search | Hybrid retrieval and evidence-oriented search |
+| Chat | Grounded chat with conversation continuity |
+| Conversations | Create/list/read persisted conversation history |
+| Agent runs | Inspect execution traces and run history |
+| Specialized agents | Compare, report, BOM and presentation workflows |
+| Security | Prompt-injection/security scanning primitives |
+
+FastAPI's interactive API documentation is available at `/docs` when the backend is running.
+
+---
+
+## Production and deployment status
+
+The repository contains the production entrypoint and deployment configuration used by the Render service.
+
+The backend deployment currently requires available Render build capacity before the latest source changes can be rebuilt. The latest source on `main` includes the PostgreSQL/psycopg v3 compatibility fix and the Render production entrypoint.
+
+**Important:** deployment status is intentionally kept separate from source-code status. A successful Git commit does not imply that the hosted backend has been verified successfully.
+
+When deployment capacity is available, the production verification checklist is:
+
+1. Backend starts successfully.
+2. PostgreSQL connection and schema initialization succeed.
+3. MongoDB Atlas connection succeeds.
+4. `/api/health` and `/api/ready` return successfully.
+5. Frontend reaches the backend.
+6. Document upload and processing work.
+7. Grounded chat creates/continues a conversation.
+8. MongoDB contains the resulting conversation, messages and agent run.
+9. History endpoints can read the persisted execution data.
+10. Authentication/tenant isolation is verified before treating the deployment as production-ready.
+
+Secrets and database credentials must remain in the hosting provider's environment configuration and must never be committed.
+
+---
+
+## Local development with Docker
+
+For a local multi-service environment, the repository includes Docker Compose configuration for the core runtime.
+
+```bash
+docker compose up --build
+```
+
+This provisions the local MongoDB service alongside the application services configured by the compose file. For production, use managed PostgreSQL/Redis/MongoDB services rather than local containers.
+
+---
+
+## Engineering highlights
+
+This project is intentionally designed to demonstrate more than framework usage. The main engineering themes are:
+
+- **Hybrid RAG:** dense retrieval + BM25 + reciprocal-rank fusion + reranking
+- **Evidence grounding:** answers are tied to retrieved evidence and provenance
+- **Agent orchestration:** specialized document workflows with explicit tool boundaries
+- **Polyglot persistence:** PostgreSQL/SQLite + MongoDB + ChromaDB + Redis/Celery
+- **Tenant-aware security:** authorization is enforced in application code, not delegated to the LLM
+- **Resilient AI history:** MongoDB failures do not automatically fail the core answer path
+- **Async architecture:** long-running document processing is designed around background jobs
+- **Evaluation-first development:** retrieval, generation, security and latency metrics have explicit contracts
+- **Production-oriented configuration:** environment separation, connection pooling, timeouts, retries and health/readiness checks
+- **Testability:** persistence, security and retrieval components have isolated test boundaries
+
+---
+
+## License
+
+See the repository license and Git history for project provenance.

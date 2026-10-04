@@ -75,6 +75,7 @@ flowchart TB
     API --> ING[Ingestion Service]
     API --> RET[Retrieval Service]
     API --> AG[Agent Runtime]
+    API --> MP[Mongo Persistence]
 
     ING --> PARSE[Format-specific Parsers]
     PARSE --> CHUNK[Normalize + Chunk]
@@ -99,6 +100,7 @@ flowchart TB
     API --> REDIS[(Redis / Jobs / Cache)]
     API --> OBS[Logs / Traces / Metrics]
     OBS --> AUDIT[(Audit Events)]
+    MP --> MONGO[(MongoDB)]
 ```
 
 ### Request lifecycle
@@ -628,37 +630,165 @@ See the repository license and Git history for project provenance.
 
 ## Data architecture: intentional polyglot persistence
 
-The platform deliberately separates data by **shape, consistency requirements, and access pattern** instead of forcing every workload into one database.
+The application uses multiple persistence technologies, with each one assigned a specific responsibility:
+
+| Store | Actual responsibility in this repository |
+|---|---|
+| **PostgreSQL / SQLite** | Relational application state: tenants, users, roles, documents, document versions, jobs and related metadata |
+| **MongoDB** | Conversations, individual chat messages, agent runs, nested execution steps, citations, model/latency metadata and variable AI outputs |
+| **ChromaDB** | Persisted document chunks and dense vector retrieval |
+| **Redis / Celery** | Task broker/result backend and asynchronous worker foundation |
+
+> **MongoDB is not the source of truth for users/documents, and it is not used for embeddings.**
+
+### MongoDB collections
 
 ```mermaid
-flowchart TB
-    APP[Enterprise Intelligence Runtime]
+erDiagram
+    CONVERSATIONS ||--o{ CONVERSATION_MESSAGES : contains
+    CONVERSATIONS ||--o{ AGENT_RUNS : produces
+    AGENT_RUNS ||--o{ EXECUTION_STEPS : stores
 
-    APP --> SQL[(PostgreSQL / SQLite)]
-    APP --> MONGO[(MongoDB)]
-    APP --> CHROMA[(ChromaDB)]
-    APP --> REDIS[(Redis / Celery)]
+    CONVERSATIONS {
+      string conversation_id PK
+      string tenant_id
+      string user_id
+      string title
+      int message_count
+      datetime created_at
+      datetime updated_at
+    }
 
-    SQL --> SQL1[Tenants / Users]
-    SQL --> SQL2[Documents / Versions]
-    SQL --> SQL3[Jobs / Relational metadata]
+    CONVERSATION_MESSAGES {
+      string message_id PK
+      string conversation_id
+      string tenant_id
+      string user_id
+      string role
+      string content
+      array citations
+      object metadata
+      datetime created_at
+    }
 
-    MONGO --> M1[Conversations]
-    MONGO --> M2[Conversation Messages]
-    MONGO --> M3[Agent Runs]
-    MONGO --> M4[Nested Steps / Tool traces]
+    AGENT_RUNS {
+      string run_id PK
+      string tenant_id
+      string user_id
+      string conversation_id
+      string agent_type
+      string task_type
+      string status
+      object input
+      array steps
+      object final_output
+      string model
+      object token_usage
+      float latency_ms
+      array citations
+      string error
+      datetime created_at
+      datetime completed_at
+    }
 
-    CHROMA --> V1[Embeddings]
-    CHROMA --> V2[Semantic retrieval]
-
-    REDIS --> R1[Async jobs]
-    REDIS --> R2[Task state / broker]
+    EXECUTION_STEPS {
+      string step_id
+      string type
+      string tool
+      object input
+      object output
+      object metadata
+      datetime started_at
+      datetime completed_at
+    }
 ```
 
-### Store responsibilities
+### Conversation lifecycle
 
-| Store | Owns | Why |
-|---|---|---|
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant M as MongoDB
+    participant R as Retrieval
+    participant G as Gemini
+
+    API->>M: create_or_get_conversation()
+    API->>M: append_message(user)
+    API->>M: start_agent_run()
+    API->>R: search_documents()
+    R-->>API: evidence
+    API->>M: append_step(retrieval)
+    API->>G: grounded generation
+    G-->>API: answer
+    API->>M: append_step(model_call)
+    API->>M: append_message(assistant + citations)
+    API->>M: complete_agent_run()
+```
+
+### Why messages are a separate collection
+
+The implementation keeps conversation metadata in `conversations` and individual messages in `conversation_messages`. This avoids turning the conversation document into an ever-growing embedded message array and makes each message independently addressable.
+
+### Why agent runs contain flexible nested steps
+
+`agent_runs.steps` is intentionally flexible because different agent workflows can emit different step types and payload shapes. The persistence layer recursively sanitizes nested Python structures before writing BSON, preserving useful structure without coupling every future agent to a fixed relational schema.
+
+### MongoDB indexes
+
+The application creates workload-driven indexes:
+
+- `conversations`: unique `conversation_id`, tenant/user/update-time lookup, tenant lookup
+- `conversation_messages`: tenant/user/conversation/time ordering and unique `(conversation_id, message_id)`
+- `agent_runs`: unique `run_id`, conversation/time, tenant/time, tenant/user/time and tenant/status lookups
+
+Index creation is idempotent and runs during MongoDB initialization when `MONGODB_URL` is configured.
+
+### Tenant/user scoping
+
+MongoDB queries are always filtered with the tenant and user context passed into `MongoPersistence`. The repository tests explicitly verify that another user or tenant cannot read an existing conversation or agent run through the persistence API.
+
+```text
+Tenant A + User A  →  own conversation/run
+Tenant A + User B  →  no access
+Tenant B + User A  →  no access
+```
+
+> The current development security layer still accepts simplified headers. Production deployments should derive tenant/user/role from verified authentication credentials; MongoDB itself is not the authorization mechanism.
+
+### MongoDB failure semantics
+
+MongoDB persistence is deliberately non-critical to the primary AI response. The repository catches `PyMongoError`, logs the failure, and returns safe defaults from the persistence layer. History endpoints explicitly check MongoDB availability and return `503` when the persistence service is unavailable.
+
+```mermaid
+flowchart LR
+    Q[Chat / Agent request] --> AI[Generate grounded response]
+    AI --> R[Return response]
+    AI --> M[Persist conversation / run]
+    M -->|success| S[History stored]
+    M -->|failure| L[Structured log]
+    L -. does not invalidate .-> R
+```
+
+### MongoDB configuration
+
+```env
+MONGODB_URL=
+MONGODB_DATABASE=enterprise_intelligence
+MONGODB_APP_NAME=enterprise-intelligence-runtime
+MONGODB_CONNECT_TIMEOUT_MS=3000
+MONGODB_SERVER_SELECTION_TIMEOUT_MS=3000
+MONGODB_SOCKET_TIMEOUT_MS=5000
+MONGODB_MAX_POOL_SIZE=20
+MONGODB_MIN_POOL_SIZE=0
+MONGODB_RETRY_READS=true
+MONGODB_RETRY_WRITES=true
+```
+
+`docker-compose.yml` provisions MongoDB 8 locally. For production, the repository documentation recommends MongoDB Atlas or another managed replica-set/sharded deployment.
+
+See [`docs/MONGODB.md`](docs/MONGODB.md) for the detailed MongoDB contract.
+
+---|---|---|
 | **PostgreSQL / SQLite** | Tenants, users, roles, documents, versions, jobs and strongly relational state | Constraints, relationships, transactions |
 | **MongoDB** | Conversations, messages, agent runs, nested steps, citations, model metadata and variable AI outputs | Flexible document model for evolving execution traces |
 | **ChromaDB** | Embeddings and vectorized chunks | Dense similarity retrieval |

@@ -635,7 +635,7 @@ flowchart TB
     APP[Enterprise Intelligence Runtime]
 
     APP --> SQL[(PostgreSQL / SQLite)]
-    APP --> MONGO[(MongoDB)
+    APP --> MONGO[(MongoDB)]
     APP --> CHROMA[(ChromaDB)]
     APP --> REDIS[(Redis / Celery)]
 

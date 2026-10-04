@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/affanSkhan/Enterprise-Document-Intelligence-Agent/actions/workflows/ci.yml"><img src="https://github.com/affanSkhan/Enterprise-Document-Intelligence-Agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js">
   <img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white" alt="FastAPI">
   <img src="https://img.shields.io/badge/PostgreSQL-production-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
@@ -626,43 +626,302 @@ The goal is not simply to make an LLM answer questions about documents. The goal
 
 See the repository license and Git history for project provenance.
 
-## Polyglot persistence
+## Data architecture: intentional polyglot persistence
 
-The platform deliberately uses **polyglot persistence** because different workloads have different data characteristics.
+The platform deliberately separates data by **shape, consistency requirements, and access pattern** instead of forcing every workload into one database.
 
-| Store | Responsibility | Why it fits |
+```mermaid
+flowchart TB
+    APP[Enterprise Intelligence Runtime]
+
+    APP --> SQL[(PostgreSQL / SQLite)]
+    APP --> MONGO[(MongoDB)
+    APP --> CHROMA[(ChromaDB)]
+    APP --> REDIS[(Redis / Celery)]
+
+    SQL --> SQL1[Tenants / Users]
+    SQL --> SQL2[Documents / Versions]
+    SQL --> SQL3[Jobs / Relational metadata]
+
+    MONGO --> M1[Conversations]
+    MONGO --> M2[Conversation Messages]
+    MONGO --> M3[Agent Runs]
+    MONGO --> M4[Nested Steps / Tool traces]
+
+    CHROMA --> V1[Embeddings]
+    CHROMA --> V2[Semantic retrieval]
+
+    REDIS --> R1[Async jobs]
+    REDIS --> R2[Task state / broker]
+```
+
+### Store responsibilities
+
+| Store | Owns | Why |
 |---|---|---|
-| **PostgreSQL / SQLite** | Relational system of record: users, tenants, permissions, document metadata/versions and jobs | Strong relationships, constraints and transactional consistency |
-| **MongoDB** | Conversations, messages, agent runs, nested execution steps, tool traces and variable AI/model metadata | Flexible schema for rapidly evolving AI execution data |
-| **ChromaDB** | Embeddings and vector retrieval | Purpose-built vector similarity search |
-| **Redis / Celery** | Asynchronous jobs and cache | Fast transient state and background execution |
+| **PostgreSQL / SQLite** | Tenants, users, roles, documents, versions, jobs and strongly relational state | Constraints, relationships, transactions |
+| **MongoDB** | Conversations, messages, agent runs, nested steps, citations, model metadata and variable AI outputs | Flexible document model for evolving execution traces |
+| **ChromaDB** | Embeddings and vectorized chunks | Dense similarity retrieval |
+| **Redis / Celery** | Background execution and cache foundation | Low-latency transient state and asynchronous jobs |
 
-MongoDB is an **additional** persistence layer; it does not replace the relational database or vector store.
+> MongoDB is an **additional persistence layer**. It does not replace the relational database and it is not the vector database.
 
-### AI history and agent-run persistence
+---
 
-Chat requests can create or continue a conversation using `conversation_id`. Messages are persisted with tenant/user scope, and agent executions receive stable `run_id` values.
+# MongoDB: AI memory and execution telemetry
 
-An agent run can contain nested steps such as:
+MongoDB was added specifically for the parts of the platform whose shape changes as the agent system evolves.
 
-- retrieval operations
-- model calls
-- tool calls
-- agent actions
-- latency and status
-- citations/evidence metadata
+Relational storage remains the system of record for structured application entities. MongoDB handles **conversation history and AI execution state** where nested and agent-specific data is more natural.
+
+## Why MongoDB?
+
+An AI run can contain a variable sequence such as:
+
+```text
+User question
+  ↓
+Hybrid retrieval
+  ↓
+Evidence collection
+  ↓
+Model call
+  ↓
+Tool call
+  ↓
+Verification
+  ↓
+Final answer
+```
+
+Different agent types can have different steps and payloads. Encoding every future step as a rigid relational schema would create unnecessary migration pressure.
+
+MongoDB therefore provides a flexible document-oriented boundary for:
+
+- conversation metadata
+- individual conversation messages
+- citations and evidence metadata
+- agent run inputs and outputs
+- nested execution steps
+- model identifiers
 - token-usage metadata when available
+- latency and completion status
+- errors and diagnostic metadata
 
-This gives the system a persistent execution history without forcing highly variable AI traces into rigid relational tables.
+## MongoDB collection model
 
-MongoDB persistence is intentionally **non-critical to answer generation**. If MongoDB is unavailable, the core document-intelligence request can still complete and the persistence failure is logged. Read-only history endpoints return `503` when the history store is unavailable.
+```mermaid
+erDiagram
+    CONVERSATIONS ||--o{ CONVERSATION_MESSAGES : contains
+    CONVERSATIONS ||--o{ AGENT_RUNS : produces
+    AGENT_RUNS ||--o{ EXECUTION_STEPS : contains
 
-See [`docs/MONGODB.md`](docs/MONGODB.md) for the schema, indexes, security boundary, local Docker setup and production configuration.
+    CONVERSATIONS {
+      string conversation_id PK
+      string tenant_id
+      string user_id
+      string title
+      int message_count
+      datetime created_at
+      datetime updated_at
+    }
 
-### MongoDB configuration
+    CONVERSATION_MESSAGES {
+      string message_id PK
+      string conversation_id
+      string tenant_id
+      string user_id
+      string role
+      string content
+      array citations
+      object metadata
+      datetime created_at
+    }
+
+    AGENT_RUNS {
+      string run_id PK
+      string tenant_id
+      string user_id
+      string conversation_id
+      string agent_type
+      string task_type
+      string status
+      object input
+      array steps
+      object final_output
+      string model
+      object token_usage
+      float latency_ms
+      array citations
+      string error
+      datetime created_at
+      datetime completed_at
+    }
+
+    EXECUTION_STEPS {
+      string step_id
+      string type
+      string tool
+      object input
+      object output
+      object metadata
+      datetime started_at
+      datetime completed_at
+    }
+```
+
+### 1. conversations
+
+A conversation stores lightweight metadata. Messages are intentionally **not embedded as one unbounded array**.
+
+```json
+{
+  "conversation_id": "...",
+  "tenant_id": "...",
+  "user_id": "...",
+  "title": "New conversation",
+  "message_count": 12,
+  "created_at": "...",
+  "updated_at": "..."
+}
+```
+
+Keeping messages in a separate collection prevents one conversation document from growing without bound and makes individual messages independently addressable.
+
+### 2. conversation_messages
+
+Messages preserve:
+
+- role (`user` / `assistant`)
+- content
+- citations
+- metadata
+- tenant/user scope
+- creation timestamp
+
+### 3. agent_runs
+
+An agent run is the durable record of one specialized or conversational execution.
+
+```json
+{
+  "run_id": "...",
+  "agent_type": "document_comparison",
+  "task_type": "compare_documents",
+  "status": "completed",
+  "input": {"doc_id_1": "...", "doc_id_2": "..."},
+  "steps": [
+    {
+      "type": "retrieval",
+      "tool": "hybrid_search",
+      "metadata": {"reranked": true}
+    },
+    {
+      "type": "tool_call",
+      "tool": "document_comparison"
+    }
+  ],
+  "final_output": {"answer": "..."},
+  "model": "gemini-2.5-flash",
+  "latency_ms": 123.4
+}
+```
+
+This flexible run document is especially useful for agentic systems because a new agent can introduce a new step type without requiring a new SQL table or column for every variation.
+
+## MongoDB execution lifecycle
+
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant M as MongoDB
+    participant R as Retrieval
+    participant L as Gemini
+
+    API->>M: Create / continue conversation
+    API->>M: Persist user message
+    API->>M: Start agent run
+    API->>R: Search evidence
+    R-->>API: Ranked evidence
+    API->>M: Append retrieval step
+    API->>L: Generate grounded response
+    L-->>API: Answer
+    API->>M: Append model step
+    API->>M: Persist assistant message + citations
+    API->>M: Complete agent run
+```
+
+## Tenant and user isolation
+
+MongoDB repository methods require application-supplied `tenant_id` and `user_id` scope before reading or writing conversation history and agent runs.
+
+```text
+Tenant A + User A  →  can read their own history
+Tenant A + User B  →  cannot read it
+Tenant B + User A  →  cannot read it
+```
+
+The repository has explicit tests covering these isolation boundaries.
+
+> **Important:** MongoDB is not the authorization layer. The current development security context still supports simplified header-based identity for backward compatibility. Production identity should come from a verified authentication token/session.
+
+## MongoDB index strategy
+
+The application creates indexes that correspond to real API access patterns:
+
+| Collection | Index | Purpose |
+|---|---|---|
+| `conversations` | unique `conversation_id` | Stable conversation identity |
+| `conversations` | `tenant_id + user_id + updated_at` | User history listing |
+| `conversation_messages` | `tenant_id + user_id + conversation_id + created_at` | Ordered conversation reads |
+| `conversation_messages` | unique `conversation_id + message_id` | Message idempotency |
+| `agent_runs` | unique `run_id` | Stable execution identity |
+| `agent_runs` | `tenant_id + conversation_id + created_at` | Conversation run history |
+| `agent_runs` | `tenant_id + user_id + created_at` | User-scoped run history |
+| `agent_runs` | `tenant_id + status` | Operational status filtering |
+
+The index creation path is idempotent so application startup can safely ensure the required indexes exist.
+
+## Reliability model
+
+MongoDB persistence is intentionally treated as **non-critical history/telemetry** for the primary answer path.
+
+```mermaid
+flowchart LR
+    Q[AI request] --> AI[Generate grounded response]
+    AI --> OUT[Return answer]
+    AI --> M[Persist history / run]
+    M -->|available| STORED[Stored]
+    M -->|unavailable| LOG[Log persistence failure]
+    LOG -.-> OUT
+```
+
+Additional safeguards in the Mongo boundary include:
+
+- bounded connect/server-selection/socket timeouts
+- reusable MongoDB client and configurable pool limits
+- optional retryable reads/writes
+- idempotent indexes
+- stable IDs for replay-safe message/run writes
+- graceful disabled mode when `MONGODB_URL` is empty
+- explicit `503` behaviour for history endpoints when the history store is unavailable
+
+### Local MongoDB
+
+`docker-compose.yml` provisions MongoDB 8 locally.
+
+```bash
+docker compose up --build
+```
+
+### MongoDB Atlas
+
+For production, the intended deployment is MongoDB Atlas or another managed replica-set/sharded MongoDB deployment.
+
+Configure:
 
 ```env
-MONGODB_URL=
+MONGODB_URL=mongodb+srv://<user>:<password>@<cluster>/
 MONGODB_DATABASE=enterprise_intelligence
 MONGODB_APP_NAME=enterprise-intelligence-runtime
 MONGODB_CONNECT_TIMEOUT_MS=3000
@@ -674,83 +933,106 @@ MONGODB_RETRY_READS=true
 MONGODB_RETRY_WRITES=true
 ```
 
-For production, use MongoDB Atlas or another managed replica-set/sharded deployment. Never commit credentials.
+Never commit MongoDB credentials to the repository.
 
 ---
 
-## API surface
+# AI agent execution model
 
-The backend exposes a FastAPI API for the main intelligence workflows, including:
-
-| Area | Examples |
-|---|---|
-| Health/readiness | `/api/health`, `/api/ready`, MongoDB readiness |
-| Documents | Upload, listing, metadata and processing workflows |
-| Search | Hybrid retrieval and evidence-oriented search |
-| Chat | Grounded chat with conversation continuity |
-| Conversations | Create/list/read persisted conversation history |
-| Agent runs | Inspect execution traces and run history |
-| Specialized agents | Compare, report, BOM and presentation workflows |
-| Security | Prompt-injection/security scanning primitives |
-
-FastAPI's interactive API documentation is available at `/docs` when the backend is running.
-
----
-
-## Production and deployment status
-
-The repository contains the production entrypoint and deployment configuration used by the Render service.
-
-The backend deployment currently requires available Render build capacity before the latest source changes can be rebuilt. The latest source on `main` includes the PostgreSQL/psycopg v3 compatibility fix and the Render production entrypoint.
-
-**Important:** deployment status is intentionally kept separate from source-code status. A successful Git commit does not imply that the hosted backend has been verified successfully.
-
-When deployment capacity is available, the production verification checklist is:
-
-1. Backend starts successfully.
-2. PostgreSQL connection and schema initialization succeed.
-3. MongoDB Atlas connection succeeds.
-4. `/api/health` and `/api/ready` return successfully.
-5. Frontend reaches the backend.
-6. Document upload and processing work.
-7. Grounded chat creates/continues a conversation.
-8. MongoDB contains the resulting conversation, messages and agent run.
-9. History endpoints can read the persisted execution data.
-10. Authentication/tenant isolation is verified before treating the deployment as production-ready.
-
-Secrets and database credentials must remain in the hosting provider's environment configuration and must never be committed.
-
----
-
-## Local development with Docker
-
-For a local multi-service environment, the repository includes Docker Compose configuration for the core runtime.
-
-```bash
-docker compose up --build
+```mermaid
+flowchart TB
+    U[User Task] --> API[FastAPI]
+    API --> SEC[Tenant / User / Role Context]
+    SEC --> RET[Hybrid Retrieval]
+    RET --> E[Evidence]
+    E --> SPEC[Specialized Agent]
+    SPEC --> LLM[Gemini]
+    LLM --> OUT[Grounded Output]
+    OUT --> MONGO[MongoDB Agent Run]
+    SPEC --> MONGO
+    RET --> MONGO
 ```
 
-This provisions the local MongoDB service alongside the application services configured by the compose file. For production, use managed PostgreSQL/Redis/MongoDB services rather than local containers.
+The four specialized endpoints currently exposed by the backend are:
+
+| Workflow | Endpoint | Output style |
+|---|---|---|
+| Document comparison | `POST /api/agents/compare` | Natural-language comparison |
+| Report generation | `POST /api/agents/report` | Executive report |
+| BOM extraction | `POST /api/agents/bom` | Structured JSON array |
+| Presentation generation | `POST /api/agents/presentation` | Structured slide outline |
+
+Each specialized workflow creates an agent-run record and can store the execution result and steps in MongoDB.
 
 ---
 
-## Engineering highlights
+# Retrieval architecture
 
-This project is intentionally designed to demonstrate more than framework usage. The main engineering themes are:
+```mermaid
+flowchart TB
+    Q[Question] --> D[Dense Retrieval]
+    Q --> S[Sparse BM25]
+    D --> F[RRF Fusion]
+    S --> F
+    F --> RR[Cross-Encoder Rerank]
+    RR --> E[Top-K Evidence]
+    E --> L[Gemini Grounded Generation]
+```
 
-- **Hybrid RAG:** dense retrieval + BM25 + reciprocal-rank fusion + reranking
-- **Evidence grounding:** answers are tied to retrieved evidence and provenance
-- **Agent orchestration:** specialized document workflows with explicit tool boundaries
-- **Polyglot persistence:** PostgreSQL/SQLite + MongoDB + ChromaDB + Redis/Celery
-- **Tenant-aware security:** authorization is enforced in application code, not delegated to the LLM
-- **Resilient AI history:** MongoDB failures do not automatically fail the core answer path
-- **Async architecture:** long-running document processing is designed around background jobs
-- **Evaluation-first development:** retrieval, generation, security and latency metrics have explicit contracts
-- **Production-oriented configuration:** environment separation, connection pooling, timeouts, retries and health/readiness checks
-- **Testability:** persistence, security and retrieval components have isolated test boundaries
+The current search service supports:
+
+- `dense` retrieval
+- `sparse` retrieval
+- `hybrid` retrieval
+- optional reranking
+
+Default retrieval controls include configurable candidate depth, chunk size/overlap, and reranker top-K.
+
+---
+
+# Current implementation boundaries
+
+The repository is intentionally explicit about what is implemented and what remains hardening work.
+
+| Area | Current state |
+|---|---|
+| MongoDB conversation persistence | ✅ Implemented |
+| MongoDB agent-run + nested step persistence | ✅ Implemented |
+| MongoDB tenant/user scoped history | ✅ Implemented |
+| MongoDB health/readiness boundary | ✅ Implemented |
+| ChromaDB dense retrieval | ✅ Implemented |
+| BM25 + RRF + reranking | ✅ Implemented |
+| Celery/Redis foundation | ✅ Implemented |
+| Production token-derived identity | ⚠️ Hardening required |
+| Document-level ACL filtering before retrieval | ⚠️ Hardening required |
+| Fully resumable asynchronous ingestion | ⚠️ Roadmap |
+| OCR/layout-aware parsing | ⚠️ Roadmap |
+| Full evaluation regression gate | ⚠️ Roadmap |
+
+One important frontend note: the chat component reads `NEXT_PUBLIC_API_URL`, while some current document/agent components still contain localhost API URLs directly. Production frontend deployment should centralize the API base URL before considering the UI configuration deployment-complete.
+
+---
+
+# Interview-ready architecture summary
+
+> **Why use MongoDB when PostgreSQL already exists?**
+
+> PostgreSQL remains the relational system of record for tenants, users, document metadata, versions and other strongly structured entities. MongoDB stores conversations and agent execution traces because their structure is variable, nested and likely to evolve as new agents and tools are introduced. ChromaDB remains the vector store, while Redis/Celery handles asynchronous execution. This is intentional polyglot persistence by workload.
+
+> **Why not store conversations in one MongoDB document?**
+
+> Messages are stored separately so a conversation does not grow as one unbounded array. That gives better document growth characteristics and makes individual message records independently addressable.
+
+> **What happens when MongoDB is down?**
+
+> The main AI response path is designed to remain useful because MongoDB persistence is non-critical history/telemetry. Persistence errors are logged; history-specific endpoints surface the dependency failure explicitly.
+
+> **How is tenant isolation handled?**
+
+> MongoDB access is always scoped using tenant/user context from the application security layer. MongoDB itself is not treated as an authorization mechanism.
 
 ---
 
 ## License
 
-See the repository license and Git history for project provenance.
+See the repository license for the applicable terms.

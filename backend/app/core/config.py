@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     CHUNK_SIZE: int = 800
     CHUNK_OVERLAP: int = 120
 
-    CORS_ORIGINS: str = "http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:3000,https://enterprise-doc-intelligence-ui.onrender.com"
     OTEL_SERVICE_NAME: str = "enterprise-intelligence-runtime"
     OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
 

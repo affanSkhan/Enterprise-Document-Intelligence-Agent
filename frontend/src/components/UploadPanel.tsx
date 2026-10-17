@@ -1,5 +1,6 @@
 "use client";
 import { useState } from 'react';
+import { apiUrl } from '@/lib/api';
 
 export default function UploadPanel() {
   const [file, setFile] = useState<File | null>(null);
@@ -11,7 +12,7 @@ export default function UploadPanel() {
     setIsUploading(true); setMessage('');
     const formData = new FormData(); formData.append('file', file);
     try {
-      const res = await fetch('http://localhost:8000/api/documents/upload', { method: 'POST', body: formData });
+      const res = await fetch(apiUrl('/api/documents/upload'), { method: 'POST', body: formData });
       const data = (await res.json()) as { detail?: string };
       if (res.ok) { setMessage(`Success! ${file.name} uploaded & indexed.`); setFile(null); }
       else setMessage(`Error: ${data.detail || 'Upload failed'}`);

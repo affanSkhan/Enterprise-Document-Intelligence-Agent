@@ -4,7 +4,7 @@ export const TENANT_KEY = "ei.tenant";
 export const TOKEN_KEY = "ei.token";
 
 export type Session = { access_token: string; token_type: string; expires_in: number };
-export type Document = { id: string; filename: string; file_type: string; created_at: string; updated_at?: string; status: string; current_version?: number };
+export type Document = { id: string; filename: string; file_type: string; created_at: string; updated_at?: string; status: string; error_message?: string | null; current_version?: number };
 export type Job = { job_id: string; document_id: string; status: string; checkpoint: string; attempts: number; max_attempts: number; error?: string | null };
 export type Evidence = { id: string; content: string; metadata?: { filename?: string; chunk_id?: string; doc_id?: string; chunk_idx?: number; version?: number }; trust?: string; retrieval_score?: number };
 export type ChatResponse = { answer: string; evidence: Evidence[]; verified: boolean; confidence: number; abstained: boolean; model: string | null; retrieval: { mode: string; reranked: boolean; candidate_count: number; accepted_evidence: number; acl_enforced: boolean } };
@@ -85,7 +85,7 @@ export async function login(tenant: string, email: string, password: string) {
 }
 
 export const api = {
-  health: () => request<{status:string}>("/api/health", {}, false),
+  health: () => request<{status:string; ai_mode?: "gemini" | "local-demo" | "unavailable"; gemini_configured?: boolean; embedding_mode?: string; database_backend?: string; vector_backend?: string}>("/api/health", {}, false),
   documents: () => request<Document[]>("/api/documents"),
   upload: async (file: File) => { const form = new FormData(); form.append("file", file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>("/api/documents/upload", {method:"POST", body:form}); },
   job: (id: string) => request<Job>(`/api/jobs/${id}`),

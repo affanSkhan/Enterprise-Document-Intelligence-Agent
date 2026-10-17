@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str = ""
 
     GEMINI_API_KEY: str = ""
+    # Explicit, transparent demo fallback when Gemini credentials are absent.
+    ENABLE_LOCAL_DEMO_FALLBACK: bool = False
     PRIMARY_LLM_MODEL: str = "gemini-2.5-flash"
     FAST_LLM_MODEL: str = "gemini-3.5-flash-lite"
 

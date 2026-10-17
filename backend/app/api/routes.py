@@ -57,7 +57,17 @@ class ClaimVerification(BaseModel):
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "service": "enterprise-intelligence-runtime"}
+    gemini_configured = bool(settings.GEMINI_API_KEY)
+    return {
+        "status": "ok",
+        "service": "enterprise-intelligence-runtime",
+        "gemini_configured": gemini_configured,
+        "ai_mode": "gemini" if gemini_configured else ("local-demo" if settings.ENABLE_LOCAL_DEMO_FALLBACK else "unavailable"),
+        "local_demo_fallback": settings.ENABLE_LOCAL_DEMO_FALLBACK,
+        "embedding_mode": "gemini" if gemini_configured else ("local-hash-demo" if settings.ENABLE_LOCAL_DEMO_FALLBACK else "unavailable"),
+        "database_backend": "sqlite (ephemeral)" if settings.DATABASE_URL.startswith("sqlite") else "postgresql",
+        "vector_backend": settings.VECTOR_BACKEND,
+    }
 
 
 @router.get("/ready")

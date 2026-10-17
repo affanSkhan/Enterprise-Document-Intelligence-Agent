@@ -1,4 +1,5 @@
 import math
+import re
 import time
 from typing import Any
 
@@ -62,6 +63,55 @@ def _response_text(content: Any) -> str:
     return str(content)
 
 
+def _local_extractive_answer(query: str, results: list[dict[str, Any]]) -> str:
+    """Return matching, authorized passages when a generative model is unavailable."""
+    stop_words = {
+        "the", "and", "for", "with", "from", "that", "this", "what", "which",
+        "when", "where", "who", "how", "are", "was", "were", "have", "has",
+        "had", "you", "your", "about", "into", "does", "can", "could", "would",
+        "should", "all", "any", "some", "these", "those", "their", "there",
+    }
+    query_terms = {
+        token for token in re.findall(r"[a-z0-9]+", query.lower())
+        if len(token) > 2 and token not in stop_words
+    }
+    candidates: list[tuple[float, str, str]] = []
+    seen: set[str] = set()
+    for result in results:
+        filename = str((result.get("metadata") or {}).get("filename") or "source document")
+        content = str(result.get("content") or "")
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", content):
+            sentence = " ".join(sentence.split()).strip(" •-")
+            if len(sentence) < 28:
+                continue
+            normalized = re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
+            if not normalized or normalized in seen:
+                continue
+            tokens = set(re.findall(r"[a-z0-9]+", normalized))
+            overlap = len(query_terms & tokens)
+            score = overlap / max(len(query_terms), 1)
+            if query_terms and overlap == 0:
+                continue
+            seen.add(normalized)
+            candidates.append((score, sentence, filename))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    chosen = candidates[:7]
+    if not chosen:
+        for result in results[:4]:
+            sentence = " ".join(str(result.get("content") or "").split())[:420]
+            if sentence:
+                chosen.append((0.0, sentence, str((result.get("metadata") or {}).get("filename") or "source document")))
+    if not chosen:
+        return "Local demo mode is active because Gemini is not configured, and no readable matching passages were found."
+    bullets = "\n".join(f"- {sentence} [source: {filename}]" for _, sentence, filename in chosen)
+    return (
+        "LOCAL DEMO MODE — Gemini is not configured, so this is an extractive response from authorized source text, "
+        "not a generative AI answer.\n\n"
+        f"Most relevant passages for: {query}\n\n{bullets}\n\n"
+        "Configure GEMINI_API_KEY for generative synthesis."
+    )
+
+
 def chat_with_docs(
     query: str,
     top_k: int = 6,
@@ -98,6 +148,33 @@ def chat_with_docs(
         f"[{i + 1}] {sanitize_retrieved_content(result['content'])}\nSOURCE: {result['metadata'].get('filename', 'unknown')}"
         for i, result in enumerate(accepted_results)
     )
+    if not settings.GEMINI_API_KEY and settings.ENABLE_LOCAL_DEMO_FALLBACK:
+        evidence = [
+            {
+                "id": f"evidence-{i + 1}",
+                "content": result["content"],
+                "metadata": result["metadata"],
+                "trust": "untrusted-document-data",
+                "retrieval_score": result["score"],
+            }
+            for i, result in enumerate(accepted_results)
+        ]
+        return {
+            "answer": _local_extractive_answer(query, accepted_results),
+            "evidence": evidence,
+            "verified": False,
+            "confidence": _score_to_confidence(float(accepted_results[0]["score"])),
+            "abstained": False,
+            "model": "local-extractive-demo",
+            "retrieval": {
+                "mode": "hybrid-local-demo",
+                "reranked": True,
+                "candidate_count": len(results),
+                "accepted_evidence": len(accepted_results),
+                "acl_enforced": True,
+            },
+        }
+
     model = choose_model(query, len(accepted_results))
     llm = ChatGoogleGenerativeAI(model=model, google_api_key=settings.GEMINI_API_KEY)
     prompt = ChatPromptTemplate.from_messages(

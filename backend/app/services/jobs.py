@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import time
 import uuid
@@ -15,6 +16,8 @@ from app.services.ingestion import process_document_job
 # made the public API intermittently return 502. Keep one process and use a
 # bounded background executor instead. PostgreSQL remains the durable source
 # of truth, and startup recovery re-submits queued/running jobs.
+logger = logging.getLogger(__name__)
+
 _EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ingestion")
 _FUTURES: dict[str, object] = {}
 _LOCK = threading.Lock()
@@ -26,6 +29,7 @@ def _run_job_with_retries(job_id: str) -> None:
             process_document_job(job_id)
             return
         except Exception:
+            logger.exception("Document ingestion attempt failed for job_id=%s", job_id)
             with SessionLocal() as db:
                 job = db.get(Job, job_id)
                 if not job or job.status == "dead" or job.attempts >= job.max_attempts:

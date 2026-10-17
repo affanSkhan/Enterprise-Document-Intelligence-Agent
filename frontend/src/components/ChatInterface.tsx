@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { apiUrl } from "@/lib/api";
 
 type Citation = { metadata?: { filename?: string } };
 type Message = { role: "user" | "assistant"; content: string; citations?: Citation[] };
@@ -11,8 +12,6 @@ type ChatResponse = {
   conversation_id?: string | null;
   run_id?: string | null;
 };
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -34,7 +33,7 @@ export default function ChatInterface() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/chat`, {
+      const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

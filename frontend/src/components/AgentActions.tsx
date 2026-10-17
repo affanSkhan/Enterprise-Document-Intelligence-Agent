@@ -1,6 +1,7 @@
 "use client";
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { apiUrl } from '@/lib/api';
 
 type Action = 'report' | 'presentation' | 'bom';
 type Slide = { title: string; bullet_points: string[] };
@@ -25,7 +26,7 @@ export default function AgentActions() {
     const payload = action === 'bom' ? { doc_id: topic } : { topic };
 
     try {
-      const res = await fetch(`http://localhost:8000${endpoint}`, {
+      const res = await fetch(apiUrl(endpoint), {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
       const data = (await res.json()) as AgentResponse;

@@ -25,12 +25,23 @@ _BROAD_LIST_PATTERNS = (
 )
 
 
+_SECTION_QUERY_PATTERN = re.compile(
+    r"\b(?:education|academic|qualification|qualifications|degree|school|college|university|"
+    r"graduation|certifications?|licenses?|achievements?|awards?|"
+    r"(?:work|professional|employment)\s+(?:experience|history)|"
+    r"career\s+history|project\s+history)\b",
+    re.I,
+)
+
+
 def _is_broad_list_query(query: str) -> bool:
-    """Identify questions where completeness matters more than top-k precision."""
+    """Expand context for list questions and queries about a named document section."""
     text = " ".join((query or "").strip().lower().split())
     if not text:
         return False
-    return any(pattern.search(text) for pattern in _BROAD_LIST_PATTERNS)
+    return bool(_SECTION_QUERY_PATTERN.search(text)) or any(
+        pattern.search(text) for pattern in _BROAD_LIST_PATTERNS
+    )
 
 
 def _tenant_documents(tenant_id: str, allowed_ids: list[str] | None, db: Session | None = None) -> list[Document]:

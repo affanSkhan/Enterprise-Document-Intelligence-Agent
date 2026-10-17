@@ -88,6 +88,7 @@ export const api = {
   health: () => request<{status:string; ai_mode?: "gemini" | "local-demo" | "unavailable"; gemini_configured?: boolean; embedding_mode?: string; database_backend?: string; vector_backend?: string}>("/api/health", {}, false),
   documents: () => request<Document[]>("/api/documents"),
   upload: async (file: File) => { const form = new FormData(); form.append("file", file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>("/api/documents/upload", {method:"POST", body:form}); },
+  reindexDocument: async (id: string, file: File) => { const form = new FormData(); form.append("file", file); return request<{document_id:string;job_id:string;status:string;checkpoint:string;queued:boolean}>(`/api/documents/${encodeURIComponent(id)}/reindex`, {method:"POST", body:form}); },
   job: (id: string) => request<Job>(`/api/jobs/${id}`),
   search: (query: string, top_k = 5) => request<{results: Evidence[]}>("/api/search", {method:"POST", body:JSON.stringify({query,top_k,mode:"hybrid",rerank:true})}),
   chat: (query: string, top_k = 6) => request<ChatResponse>("/api/chat", {method:"POST", body:JSON.stringify({query,top_k})}),

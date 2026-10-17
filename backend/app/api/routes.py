@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import text
@@ -11,7 +14,7 @@ from app.db.session import get_db
 from app.security.acl import allowed_document_ids, can_read_document
 from app.security.dependencies import CurrentUser, get_current_user, get_tenant_id, require_role
 from app.services.evidence_graph import build_document_graph, detect_contradictions, graph_snapshot, verify_claims
-from app.services.ingestion import stage_upload
+from app.services.ingestion import _sidecar, sha256_bytes, stage_upload
 from app.services.jobs import enqueue_ingestion, job_payload
 from app.services.search import search_documents
 from app.core.config import settings
@@ -89,6 +92,97 @@ async def upload_document(file: UploadFile = File(...), tenant_id: str = Depends
         return {"document_id": document.id, "job_id": job.id, "status": job.status, "checkpoint": job.checkpoint, "queued": job.status == "queued", "duplicate": duplicate}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/documents/{doc_id}/reindex", status_code=202)
+async def reindex_document(
+    doc_id: str,
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(get_tenant_id),
+    _: str = Depends(require_role("admin", "manager")),
+    db: Session = Depends(get_db),
+):
+    """Rebuild an index from the exact original upload after parser improvements."""
+    document = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.tenant_id == tenant_id,
+    ).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found in workspace")
+
+    data = file.file.read()
+    if len(data) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"File exceeds {settings.MAX_UPLOAD_MB} MB limit")
+    if sha256_bytes(data) != document.checksum:
+        raise HTTPException(
+            status_code=409,
+            detail="Choose the exact original file for re-indexing. Upload changed content as a new document.",
+        )
+
+    job = db.query(Job).filter(
+        Job.tenant_id == tenant_id,
+        Job.type == "document_ingestion",
+        Job.idempotency_key == document.checksum,
+    ).first()
+    if job and job.status in {"queued", "running"}:
+        raise HTTPException(status_code=409, detail="This document already has an active ingestion job")
+
+    # Refresh original bytes and remove stale parsing/index artifacts.
+    if settings.use_pgvector:
+        document.file_content = data
+    else:
+        stored_name = Path(document.file_path).name
+        source_path = settings.storage_path() / stored_name
+        source_path.write_bytes(data)
+        document.file_path = stored_name
+        _sidecar(document.id, "parsed.txt").unlink(missing_ok=True)
+        _sidecar(document.id, "chunks.json").unlink(missing_ok=True)
+        try:
+            collection = get_chroma_client().get_collection(settings.VECTOR_COLLECTION_NAME)
+            collection.delete(where={"$and": [{"tenant_id": tenant_id}, {"doc_id": document.id}]})
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not clear the previous vector index: {exc}") from exc
+
+    if job is None:
+        job = Job(
+            tenant_id=tenant_id,
+            type="document_ingestion",
+            status="queued",
+            idempotency_key=document.checksum,
+            checkpoint="uploaded",
+            payload=json.dumps({"document_id": document.id}),
+            max_attempts=5,
+        )
+        db.add(job)
+    else:
+        job.status = "queued"
+        job.checkpoint = "uploaded"
+        job.attempts = 0
+        job.max_attempts = 5
+        job.error = None
+        job.payload = json.dumps({"document_id": document.id})
+
+    document.status = "QUEUED"
+    document.error_message = None
+    db.commit()
+    db.refresh(job)
+    try:
+        task_id = enqueue_ingestion(job)
+    except Exception as exc:
+        job.status = "dead"
+        job.error = f"Unable to enqueue re-indexing: {exc}"[:4000]
+        document.status = "ERROR"
+        document.error_message = job.error
+        db.commit()
+        raise HTTPException(status_code=503, detail=job.error) from exc
+    return {
+        "document_id": document.id,
+        "job_id": job.id,
+        "task_id": task_id,
+        "status": job.status,
+        "checkpoint": job.checkpoint,
+        "queued": True,
+    }
 
 
 @router.get("/jobs/{job_id}")

@@ -282,3 +282,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .assistant-markdown { font-size: 12px; }
   .chat-main-header { padding: 0 14px; }
 }
+
+
+/* Re-index is a quiet utility action beside document status. */
+.document-status-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.document-reindex { width: 25px; height: 25px; flex: 0 0 auto; display: inline-grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; color: var(--accent); background: var(--surface); cursor: pointer; }
+.document-reindex:hover:not(:disabled) { border-color: var(--line-strong); background: var(--accent-soft); }
+.document-reindex:disabled { opacity: .4; cursor: not-allowed; }
